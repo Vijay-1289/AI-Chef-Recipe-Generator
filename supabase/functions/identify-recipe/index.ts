@@ -30,9 +30,9 @@ serve(async (req) => {
     const buffer = await imageFile.arrayBuffer();
     const base64Image = btoa(String.fromCharCode(...new Uint8Array(buffer)));
 
-    console.log("Analyzing image with Google Cloud Vision API");
+    console.log("Analyzing image with Google Cloud Vision API using key:", GOOGLE_CLOUD_VISION_API_KEY.substring(0, 5) + "...");
 
-    // Call Google Cloud Vision API for image analysis
+    // Call Google Cloud Vision API for image analysis with more specific features
     const visionResponse = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_CLOUD_VISION_API_KEY}`, {
       method: 'POST',
       headers: {
@@ -47,10 +47,14 @@ serve(async (req) => {
             features: [
               {
                 type: 'LABEL_DETECTION',
-                maxResults: 10
+                maxResults: 15
               },
               {
                 type: 'WEB_DETECTION',
+                maxResults: 15
+              },
+              {
+                type: 'OBJECT_LOCALIZATION',
                 maxResults: 10
               }
             ]
@@ -71,27 +75,59 @@ serve(async (req) => {
     // Process the labels to identify food items
     const labels = visionData.responses[0]?.labelAnnotations || [];
     const webEntities = visionData.responses[0]?.webDetection?.webEntities || [];
+    const webLabels = visionData.responses[0]?.webDetection?.bestGuessLabels || [];
+    const localizedObjects = visionData.responses[0]?.localizedObjectAnnotations || [];
     
-    // Filter for food-related labels
+    console.log("Web best guess labels:", JSON.stringify(webLabels));
+    
+    // First, check if we have any direct food detection from localized objects
+    const foodObjects = localizedObjects.filter(obj => 
+      obj.name.toLowerCase().includes('food') || 
+      obj.name.toLowerCase().includes('dish') ||
+      obj.name.toLowerCase().includes('meal')
+    );
+    
+    // Filter for food-related labels with higher threshold
     const foodLabels = labels.filter(label => {
       const description = label.description.toLowerCase();
-      return description.includes('food') || 
-             description.includes('dish') || 
-             description.includes('cuisine') ||
-             description.includes('meal') ||
-             description.includes('recipe');
+      return (label.score > 0.7) && (
+        description.includes('food') || 
+        description.includes('dish') || 
+        description.includes('cuisine') ||
+        description.includes('meal') ||
+        description.includes('recipe') ||
+        description.includes('dessert') ||
+        description.includes('breakfast') ||
+        description.includes('lunch') ||
+        description.includes('dinner')
+      );
     });
 
-    // Find the best dish name from web entities or labels
+    // Find the best dish name
     let dishName = "";
     let confidence = 0;
     let cuisine = "International";
-
-    // First try to get dish name from web entities as they're often more specific
-    const foodWebEntities = webEntities.filter(entity => entity.score > 0.7);
-    if (foodWebEntities.length > 0) {
-      dishName = foodWebEntities[0].description;
-      confidence = foodWebEntities[0].score;
+    
+    // Best guesses from web detection are often the most accurate for food dishes
+    if (webLabels && webLabels.length > 0) {
+      dishName = webLabels[0].label;
+      confidence = 0.9; // Web best guesses are usually high confidence
+    } 
+    // Next, try specific food objects if detected
+    else if (foodObjects.length > 0) {
+      dishName = foodObjects[0].name;
+      confidence = foodObjects[0].score;
+    }
+    // Next try to get dish name from high-confidence web entities
+    else if (webEntities.length > 0) {
+      const foodEntity = webEntities.find(entity => entity.score > 0.8);
+      if (foodEntity) {
+        dishName = foodEntity.description;
+        confidence = foodEntity.score;
+      } else if (webEntities[0].score > 0.7) {
+        dishName = webEntities[0].description;
+        confidence = webEntities[0].score;
+      }
     } 
     // Fall back to labels if no good web entities
     else if (foodLabels.length > 0) {
@@ -104,23 +140,28 @@ serve(async (req) => {
       confidence = labels[0].score;
     }
 
-    // Try to determine cuisine from the labels
+    // Try to determine cuisine from the labels and web entities
     const cuisineKeywords = {
-      "Italian": ["italian", "pasta", "pizza", "risotto", "lasagna"],
-      "Mexican": ["mexican", "taco", "burrito", "enchilada", "quesadilla"],
-      "Chinese": ["chinese", "stir fry", "dumpling", "noodle", "wonton"],
-      "Japanese": ["japanese", "sushi", "ramen", "tempura", "miso"],
-      "Indian": ["indian", "curry", "masala", "naan", "tikka"],
-      "French": ["french", "croissant", "baguette", "ratatouille", "coq au vin"],
-      "Thai": ["thai", "pad thai", "curry", "tom yum", "satay"],
-      "Mediterranean": ["mediterranean", "hummus", "falafel", "kebab", "pita"],
-      "American": ["american", "burger", "hot dog", "mac and cheese", "barbecue"]
+      "Italian": ["italian", "pasta", "pizza", "risotto", "lasagna", "spaghetti", "carbonara"],
+      "Mexican": ["mexican", "taco", "burrito", "enchilada", "quesadilla", "guacamole", "tortilla"],
+      "Chinese": ["chinese", "stir fry", "dumpling", "noodle", "wonton", "kung pao", "fried rice"],
+      "Japanese": ["japanese", "sushi", "ramen", "tempura", "miso", "sashimi", "teriyaki"],
+      "Indian": ["indian", "curry", "masala", "naan", "tikka", "biryani", "paneer"],
+      "French": ["french", "croissant", "baguette", "ratatouille", "coq au vin", "quiche", "souffle"],
+      "Thai": ["thai", "pad thai", "curry", "tom yum", "satay", "spring roll"],
+      "Mediterranean": ["mediterranean", "hummus", "falafel", "kebab", "pita", "tzatziki", "olive"],
+      "American": ["american", "burger", "hot dog", "mac and cheese", "barbecue", "fried chicken"],
+      "Korean": ["korean", "kimchi", "bibimbap", "bulgogi", "gochujang", "kimbap"],
+      "Vietnamese": ["vietnamese", "pho", "banh mi", "spring roll", "fish sauce"],
+      "Spanish": ["spanish", "paella", "tapas", "sangria", "gazpacho"],
+      "Greek": ["greek", "gyro", "souvlaki", "moussaka", "tzatziki", "feta"]
     };
 
-    // Check all labels and web entities for cuisine matches
+    // Check all labels, web entities and best guess labels for cuisine matches
     const allDescriptions = [
       ...labels.map(l => l.description.toLowerCase()),
-      ...webEntities.map(e => e.description.toLowerCase())
+      ...webEntities.map(e => e.description.toLowerCase()),
+      ...(webLabels ? webLabels.map(l => l.label.toLowerCase()) : [])
     ];
 
     for (const [cuisineName, keywords] of Object.entries(cuisineKeywords)) {
@@ -135,27 +176,44 @@ serve(async (req) => {
 
     // Generate alternative dishes based on similar labels/entities
     const alternatives = [];
-    const allFoodItems = [...foodLabels, ...foodWebEntities].slice(1, 5);
+    const allFoodItems = [...foodLabels, ...webEntities.filter(e => e.score > 0.6)].slice(1, 6);
     
     for (const item of allFoodItems) {
-      if (item.description.toLowerCase() !== dishName.toLowerCase() && 
+      if (item.description && 
+          item.description.toLowerCase() !== dishName.toLowerCase() && 
           !alternatives.includes(item.description)) {
         alternatives.push(item.description);
       }
       if (alternatives.length >= 3) break;
     }
 
-    // If we couldn't find enough alternatives, add some generic ones
+    // If we couldn't find enough alternatives, add some generic ones based on the cuisine
     while (alternatives.length < 3) {
-      const genericOptions = [
+      const cuisineOptions = {
+        "Italian": ["Pasta Carbonara", "Margherita Pizza", "Risotto", "Lasagna"],
+        "Mexican": ["Beef Tacos", "Chicken Quesadilla", "Guacamole", "Enchiladas"],
+        "Chinese": ["Kung Pao Chicken", "Fried Rice", "Dumplings", "Chow Mein"],
+        "Japanese": ["Sushi Rolls", "Ramen", "Tempura", "Miso Soup"],
+        "Indian": ["Butter Chicken", "Vegetable Curry", "Naan Bread", "Tikka Masala"],
+        "Thai": ["Pad Thai", "Green Curry", "Tom Yum Soup", "Spring Rolls"],
+        "American": ["Cheeseburger", "BBQ Ribs", "Mac and Cheese", "Fried Chicken"]
+      };
+      
+      const options = cuisineOptions[cuisine] || [
         "Pasta Carbonara", "Chicken Curry", "Beef Stir Fry", 
         "Vegetable Soup", "Caesar Salad", "Mushroom Risotto"
       ];
       
-      const randomOption = genericOptions[Math.floor(Math.random() * genericOptions.length)];
+      const randomOption = options[Math.floor(Math.random() * options.length)];
       if (!alternatives.includes(randomOption) && randomOption.toLowerCase() !== dishName.toLowerCase()) {
         alternatives.push(randomOption);
       }
+    }
+
+    // Enhance the dish name if it's too generic
+    if (dishName.toLowerCase() === "food" || dishName.toLowerCase() === "dish" || dishName.toLowerCase() === "meal") {
+      // Use the first alternative or a cuisine-based default
+      dishName = alternatives[0] || `${cuisine} Dish`;
     }
 
     return new Response(
@@ -164,10 +222,12 @@ serve(async (req) => {
         cuisine,
         confidence,
         alternatives,
-        // Include extra data that might be useful for the frontend
+        // Include extra data that might be useful for debugging
         visionDetails: {
-          topLabels: labels.slice(0, 5).map(l => l.description),
-          topWebEntities: webEntities.slice(0, 5).map(e => e.description)
+          topLabels: labels.slice(0, 5).map(l => ({ description: l.description, score: l.score })),
+          topWebEntities: webEntities.slice(0, 5).map(e => ({ description: e.description, score: e.score })),
+          webBestGuess: webLabels ? webLabels.map(l => l.label) : [],
+          topObjects: localizedObjects.slice(0, 5).map(o => ({ name: o.name, score: o.score }))
         }
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -43,9 +43,10 @@ const Index = () => {
       clearInterval(progressInterval);
       setProgress(100);
 
-      // Show the detected dish with enhanced information
-      toast.success(`Dish identified: ${analysis.dishName}`, {
-        description: `Confidence: ${(analysis.confidence * 100).toFixed(0)}% • Cuisine: ${analysis.cuisine}`
+      // Show detailed toast about the detected dish
+      toast.success(`Identified: ${analysis.dishName}`, {
+        description: `Confidence: ${(analysis.confidence * 100).toFixed(0)}% • Cuisine: ${analysis.cuisine}`,
+        duration: 5000
       });
       
       // Start recipe generation
@@ -70,7 +71,13 @@ const Index = () => {
       
       // Show the recipe
       setRecipe(generatedRecipe);
-      setProcessing(false);
+      
+      // Automatically start generating the video if the recipe was successfully generated
+      if (generatedRecipe) {
+        handleGenerateVideo(generatedRecipe);
+      } else {
+        setProcessing(false);
+      }
       
     } catch (error) {
       console.error("Error processing image:", error);
@@ -82,8 +89,9 @@ const Index = () => {
   };
 
   // Handle AI chef video generation
-  const handleGenerateVideo = async () => {
-    if (!recipe) return;
+  const handleGenerateVideo = async (recipeToUse?: Recipe) => {
+    const recipeForVideo = recipeToUse || recipe;
+    if (!recipeForVideo) return;
     
     setProcessing(true);
     setProcessingStage('creating-video');
@@ -102,14 +110,15 @@ const Index = () => {
       }, 300);
 
       // Generate the AI chef video
-      const videoUrl = await generateVideo(recipe);
+      const videoUrl = await generateVideo(recipeForVideo);
       clearInterval(videoProgressInterval);
       setProgress(100);
       
       // Show the video
       setVideoUrl(videoUrl);
       toast.success("AI Chef video created", {
-        description: "Your personalized cooking tutorial is ready to watch!"
+        description: "Your personalized cooking tutorial is ready to watch!",
+        duration: 5000
       });
       
     } catch (error) {
@@ -156,7 +165,7 @@ const Index = () => {
           <RecipeDisplay 
             recipe={recipe} 
             imageUrl={uploadedImage}
-            onGenerateVideo={handleGenerateVideo}
+            onGenerateVideo={() => handleGenerateVideo()}
             videoUrl={videoUrl || undefined}
           />
         )}
