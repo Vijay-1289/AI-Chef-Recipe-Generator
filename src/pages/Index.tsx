@@ -128,10 +128,10 @@ const Index = () => {
       <header className="w-full py-8 px-6 text-center">
         <div className="max-w-4xl mx-auto space-y-2">
           <h1 className="text-4xl md:text-5xl font-serif font-semibold tracking-tight animate-fade-in-down">
-            AI Recipe Generator
+            COOK-KEY
           </h1>
           <p className="text-muted-foreground max-w-2xl mx-auto animate-fade-in">
-            Upload a photo of any dish and our AI will create a detailed recipe and AI chef video
+            Your AI Culinary Assistant: Just Snap a Photo and Get a Recipe!
           </p>
         </div>
       </header>
@@ -164,7 +164,7 @@ const Index = () => {
 
       {/* Footer */}
       <footer className="w-full py-6 px-6 text-center text-muted-foreground text-sm">
-        <p>AI Recipe Generator - A Hackathon Project</p>
+        <p>COOK-KEY - Your AI-Powered Culinary Assistant</p>
       </footer>
     </main>
   );
