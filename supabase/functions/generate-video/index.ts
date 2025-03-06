@@ -1,5 +1,5 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,158 +24,110 @@ serve(async (req) => {
       );
     }
 
-    console.log("Generating AI chef video for recipe:", recipe.name);
-    console.log("Using VIDEO_GENERATION_API_KEY:", VIDEO_GENERATION_API_KEY.substring(0, 10) + "...");
-
-    // Create a script for the AI chef based on the recipe
-    const videoScript = createChefScript(recipe);
-
+    console.log(`Generating video for recipe: ${recipe.name}`);
+    
+    // Format the recipe for video generation
+    const recipeSteps = recipe.steps.map((step: any, index: number) => {
+      return `Step ${index + 1}: ${step.instruction}${step.tip ? ` (Tip: ${step.tip})` : ''}`;
+    }).join("\n");
+    
+    const ingredientsList = recipe.ingredients.map((ing: any) => {
+      return `${ing.amount} ${ing.name}${ing.notes ? ` (${ing.notes})` : ''}`;
+    }).join(", ");
+    
+    // Create script for the AI chef
+    const videoScript = `
+      Recipe: ${recipe.name}
+      Description: ${recipe.description}
+      Cuisine: ${recipe.cuisine}
+      Difficulty: ${recipe.difficulty}
+      Cooking Time: ${recipe.cookingTime} minutes
+      Servings: ${recipe.servings}
+      
+      Ingredients:
+      ${ingredientsList}
+      
+      Instructions:
+      ${recipeSteps}
+    `;
+    
+    console.log("Prepared video script:", videoScript.substring(0, 200) + "...");
+    
+    // Call the video generation API
+    const videoApiEndpoint = "https://api.synthesia.io/v2/videos";
+    
+    console.log("Calling Synthesia API for video generation");
+    
+    // For testing, let's see if the API key is available
+    if (!VIDEO_GENERATION_API_KEY) {
+      console.error("Video generation API key is not set");
+      throw new Error("Missing API key for video generation");
+    }
+    
+    const [username, password] = VIDEO_GENERATION_API_KEY.split(':');
+    
+    // Make the API call to generate the video
     try {
-      // Parse the API key which appears to be in format username:password
-      const [username, password] = VIDEO_GENERATION_API_KEY.split(':');
-      
-      if (!username || !password) {
-        throw new Error("Invalid API key format");
-      }
-      
-      console.log("Calling Synthesia API to generate video...");
-      
-      // Call the Synthesia API to generate an AI chef video
-      const videoResponse = await fetch('https://api.synthesia.io/v2/videos', {
+      const videoResponse = await fetch(videoApiEndpoint, {
         method: 'POST',
         headers: {
-          'Authorization': `Basic ${btoa(`${username}:${password}`)}`,
+          'Authorization': `Basic ${btoa(VIDEO_GENERATION_API_KEY)}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           test: false,
-          title: `COOK-KEY: ${recipe.name}`,
-          description: `AI chef tutorial for ${recipe.name}`,
+          title: `Cooking Tutorial: ${recipe.name}`,
+          description: `AI Chef explains how to make ${recipe.name}`,
           visibility: "public",
-          templateId: "chef-kitchen", // Use a chef template if available
-          avatar: {
-            avatarId: "e354fa89-4b22-4494-9fc9-975cdb234ee4", // Example avatar ID, would need to be adjusted
-            avatarSettings: {
-              voice: "en-US-GuyNeural",
-              horizontalAlignment: "center",
-              scale: 1.0,
-              style: "rectangular",
-              backgroundColor: {
-                r: 255,
-                g: 255,
-                b: 255,
-                a: 0
-              }
-            }
-          },
-          script: videoScript,
-          background: {
-            imageUrl: "https://images.unsplash.com/photo-1556911220-bda9f33a8b1f?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1760&q=80"
+          templateId: "reuse_chef",
+          input: {
+            script: videoScript,
+            avatar: "chef1",
+            background: "kitchen"
           }
         })
       });
       
       const videoData = await videoResponse.json();
-      
-      console.log("Synthesia API response:", videoData);
+      console.log("Video generation API response:", videoData);
       
       if (videoData.id) {
-        // If successful, return the video ID and status
-        // In a production environment, we would need to poll for the video status
-        // until it's ready for download
-        
-        // For the purpose of this demo, we'll check if there's a direct downloadUrl
-        // otherwise we'll fall back to a sample
-        const videoUrl = videoData.downloadUrl || 
-                       `https://api.synthesia.io/v2/videos/${videoData.id}/download` ||
-                       "https://assets.mixkit.co/videos/preview/mixkit-cooking-meat-with-a-fork-and-spatula-5096-large.mp4";
-        
         return new Response(
           JSON.stringify({
             success: true,
-            videoId: videoData.id,
-            videoUrl,
-            status: videoData.status,
-            message: "AI Chef video generation initiated",
-            recipe: recipe.name
+            videoUrl: videoData.download || "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", 
+            videoId: videoData.id
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } else {
-        console.error("Failed to generate video with API, response:", videoData);
-        throw new Error("Failed to generate video with API");
+        throw new Error("Failed to generate video: " + JSON.stringify(videoData));
       }
     } catch (apiError) {
-      console.error("Error with video generation API:", apiError);
-      console.log("Falling back to sample cooking video");
+      console.error("Error calling video generation API:", apiError);
       
-      // Use a more realistic cooking video fallback
-      const videoId = crypto.randomUUID();
-      // High-quality cooking video fallback
-      const videoUrl = "https://assets.mixkit.co/videos/preview/mixkit-cooking-meat-with-a-fork-and-spatula-5096-large.mp4";
-      
+      // Return a sample video as fallback
       return new Response(
         JSON.stringify({
           success: true,
-          videoId,
-          videoUrl,
-          message: "AI Chef video fallback generated",
-          recipe: recipe.name,
+          videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
           fallback: true
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
   } catch (error) {
-    console.error("Error generating video:", error);
-    // Provide a better fallback for any general errors
-    const videoUrl = "https://assets.mixkit.co/videos/preview/mixkit-cooking-meat-with-a-fork-and-spatula-5096-large.mp4";
+    console.error("Error in generate-video function:", error);
     
+    // Return a fallback video
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: true,
-        videoId: crypto.randomUUID(),
-        videoUrl,
-        message: "AI Chef video fallback generated due to error",
+        videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
         fallback: true,
-        error: error.message 
+        error: error.message
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
-
-// Function to create a script for the AI chef based on the recipe
-function createChefScript(recipe) {
-  let script = `Hello! I'm your AI chef from COOK-KEY, and today I'll guide you through making ${recipe.name}. `;
-  
-  script += `This ${recipe.cuisine} dish serves ${recipe.servings} and takes about ${recipe.cookingTime} minutes to prepare. `;
-  
-  script += "Let's start with the ingredients you'll need: ";
-  
-  // Add ingredients section
-  recipe.ingredients.forEach((ingredient, index) => {
-    if (index > 0 && index < recipe.ingredients.length - 1) script += ", ";
-    if (index === recipe.ingredients.length - 1) script += " and ";
-    script += `${ingredient.amount} of ${ingredient.name}`;
-  });
-  
-  script += ". Now, let's cook! ";
-  
-  // Add cooking steps with proper pauses and intonation markers
-  recipe.steps.forEach((step, index) => {
-    script += `Step ${index + 1}: ${step.instruction} `;
-    
-    // Add a pause for better pacing
-    script += "<break time='1s'/>";
-    
-    if (step.tip) {
-      script += `Here's a pro tip: ${step.tip} `;
-      script += "<break time='500ms'/>";
-    }
-  });
-  
-  script += `<break time='1s'/> And there you have it! A delicious ${recipe.name} is ready to be served. Enjoy your meal and thank you for cooking with COOK-KEY!`;
-  
-  return script;
-}

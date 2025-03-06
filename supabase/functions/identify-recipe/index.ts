@@ -1,6 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,227 +16,208 @@ serve(async (req) => {
   }
 
   try {
+    console.log("identify-recipe function called");
+    
+    // Parse the FormData from the request
     const formData = await req.formData();
-    const imageFile = formData.get("image") as File;
-
-    if (!imageFile) {
+    const imageFile = formData.get('image');
+    
+    if (!imageFile || !(imageFile instanceof File)) {
       return new Response(
-        JSON.stringify({ error: "No image provided" }),
+        JSON.stringify({ error: "No image file provided" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Convert image to base64
-    const buffer = await imageFile.arrayBuffer();
-    const base64Image = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-
-    console.log("Analyzing image with Google Cloud Vision API using key:", GOOGLE_CLOUD_VISION_API_KEY.substring(0, 5) + "...");
-
-    // Call Google Cloud Vision API for image analysis with more specific features
-    const visionResponse = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_CLOUD_VISION_API_KEY}`, {
+    
+    console.log("Image file received:", imageFile.name, imageFile.type, `${(imageFile.size / 1024).toFixed(2)} KB`);
+    
+    // Convert the image to base64
+    const arrayBuffer = await imageFile.arrayBuffer();
+    const base64Image = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    
+    console.log("Image converted to base64, length:", base64Image.length);
+    
+    // Call Google Cloud Vision API to analyze the image
+    const visionApiEndpoint = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_CLOUD_VISION_API_KEY}`;
+    
+    console.log("Calling Google Cloud Vision API");
+    
+    const visionResponse = await fetch(visionApiEndpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         requests: [
           {
+            features: [
+              { type: 'LABEL_DETECTION', maxResults: 10 },
+              { type: 'WEB_DETECTION', maxResults: 10 }
+            ],
             image: {
               content: base64Image
-            },
-            features: [
-              {
-                type: 'LABEL_DETECTION',
-                maxResults: 15
-              },
-              {
-                type: 'WEB_DETECTION',
-                maxResults: 15
-              },
-              {
-                type: 'OBJECT_LOCALIZATION',
-                maxResults: 10
-              }
-            ]
+            }
           }
         ]
       })
     });
-
+    
     const visionData = await visionResponse.json();
     
-    if (!visionData || visionData.error) {
-      console.error("Google Vision API error:", visionData.error);
-      throw new Error("Failed to analyze image with Google Vision API");
+    console.log("Google Cloud Vision API response status:", visionResponse.status);
+    
+    if (!visionData.responses || visionData.responses.length === 0) {
+      console.error("Error in Google Cloud Vision API response:", visionData);
+      throw new Error("Failed to analyze image with Google Cloud Vision API");
     }
-
-    console.log("Google Vision API response received");
-
-    // Process the labels to identify food items
-    const labels = visionData.responses[0]?.labelAnnotations || [];
-    const webEntities = visionData.responses[0]?.webDetection?.webEntities || [];
-    const webLabels = visionData.responses[0]?.webDetection?.bestGuessLabels || [];
-    const localizedObjects = visionData.responses[0]?.localizedObjectAnnotations || [];
     
-    console.log("Web best guess labels:", JSON.stringify(webLabels));
+    // Process results from Vision API
+    const response = visionData.responses[0];
     
-    // First, check if we have any direct food detection from localized objects
-    const foodObjects = localizedObjects.filter(obj => 
-      obj.name.toLowerCase().includes('food') || 
-      obj.name.toLowerCase().includes('dish') ||
-      obj.name.toLowerCase().includes('meal')
-    );
+    // Extract labels
+    const labels = response.labelAnnotations || [];
+    const webEntities = response.webDetection?.webEntities || [];
+    const webLabels = response.webDetection?.bestGuessLabels || [];
     
-    // Filter for food-related labels with higher threshold
-    const foodLabels = labels.filter(label => {
+    console.log("Top labels:", labels.slice(0, 3).map((l: any) => l.description));
+    console.log("Web entities:", webEntities.slice(0, 3).map((e: any) => e.description));
+    console.log("Web labels:", webLabels.map((l: any) => l.label));
+    
+    // Look for food-related labels
+    const foodLabels = labels.filter((label: any) => {
       const description = label.description.toLowerCase();
-      return (label.score > 0.7) && (
-        description.includes('food') || 
-        description.includes('dish') || 
-        description.includes('cuisine') ||
-        description.includes('meal') ||
-        description.includes('recipe') ||
-        description.includes('dessert') ||
-        description.includes('breakfast') ||
-        description.includes('lunch') ||
-        description.includes('dinner')
-      );
+      return description.includes('food') || 
+             description.includes('dish') || 
+             description.includes('cuisine') ||
+             description.includes('meal') ||
+             description.includes('recipe');
     });
-
-    // Find the best dish name
-    let dishName = "";
-    let confidence = 0;
-    let cuisine = "International";
     
-    // Best guesses from web detection are often the most accurate for food dishes
-    if (webLabels && webLabels.length > 0) {
-      dishName = webLabels[0].label;
-      confidence = 0.9; // Web best guesses are usually high confidence
-    } 
-    // Next, try specific food objects if detected
-    else if (foodObjects.length > 0) {
-      dishName = foodObjects[0].name;
-      confidence = foodObjects[0].score;
-    }
-    // Next try to get dish name from high-confidence web entities
-    else if (webEntities.length > 0) {
-      const foodEntity = webEntities.find(entity => entity.score > 0.8);
-      if (foodEntity) {
-        dishName = foodEntity.description;
-        confidence = foodEntity.score;
-      } else if (webEntities[0].score > 0.7) {
-        dishName = webEntities[0].description;
-        confidence = webEntities[0].score;
-      }
-    } 
-    // Fall back to labels if no good web entities
-    else if (foodLabels.length > 0) {
-      dishName = foodLabels[0].description;
-      confidence = foodLabels[0].score;
-    } 
-    // If no food specific labels, use the top label
-    else if (labels.length > 0) {
-      dishName = labels[0].description;
-      confidence = labels[0].score;
-    }
-
-    // Try to determine cuisine from the labels and web entities
-    const cuisineKeywords = {
-      "Italian": ["italian", "pasta", "pizza", "risotto", "lasagna", "spaghetti", "carbonara"],
-      "Mexican": ["mexican", "taco", "burrito", "enchilada", "quesadilla", "guacamole", "tortilla"],
-      "Chinese": ["chinese", "stir fry", "dumpling", "noodle", "wonton", "kung pao", "fried rice"],
-      "Japanese": ["japanese", "sushi", "ramen", "tempura", "miso", "sashimi", "teriyaki"],
-      "Indian": ["indian", "curry", "masala", "naan", "tikka", "biryani", "paneer"],
-      "French": ["french", "croissant", "baguette", "ratatouille", "coq au vin", "quiche", "souffle"],
-      "Thai": ["thai", "pad thai", "curry", "tom yum", "satay", "spring roll"],
-      "Mediterranean": ["mediterranean", "hummus", "falafel", "kebab", "pita", "tzatziki", "olive"],
-      "American": ["american", "burger", "hot dog", "mac and cheese", "barbecue", "fried chicken"],
-      "Korean": ["korean", "kimchi", "bibimbap", "bulgogi", "gochujang", "kimbap"],
-      "Vietnamese": ["vietnamese", "pho", "banh mi", "spring roll", "fish sauce"],
-      "Spanish": ["spanish", "paella", "tapas", "sangria", "gazpacho"],
-      "Greek": ["greek", "gyro", "souvlaki", "moussaka", "tzatziki", "feta"]
-    };
-
-    // Check all labels, web entities and best guess labels for cuisine matches
-    const allDescriptions = [
-      ...labels.map(l => l.description.toLowerCase()),
-      ...webEntities.map(e => e.description.toLowerCase()),
-      ...(webLabels ? webLabels.map(l => l.label.toLowerCase()) : [])
+    // Find cuisine mentions
+    const cuisineKeywords = [
+      'Italian', 'Chinese', 'Indian', 'Mexican', 'Japanese', 'Thai', 
+      'French', 'Greek', 'Spanish', 'Mediterranean', 'American', 'Korean',
+      'Vietnamese', 'Turkish', 'Lebanese', 'Moroccan', 'Brazilian'
     ];
-
-    for (const [cuisineName, keywords] of Object.entries(cuisineKeywords)) {
-      for (const keyword of keywords) {
-        if (allDescriptions.some(desc => desc.includes(keyword))) {
-          cuisine = cuisineName;
+    
+    let cuisine = '';
+    for (const entity of [...labels, ...webEntities]) {
+      const entityName = entity.description || '';
+      for (const keyword of cuisineKeywords) {
+        if (entityName.includes(keyword)) {
+          cuisine = keyword;
           break;
         }
       }
-      if (cuisine !== "International") break;
+      if (cuisine) break;
     }
-
-    // Generate alternative dishes based on similar labels/entities
-    const alternatives = [];
-    const allFoodItems = [...foodLabels, ...webEntities.filter(e => e.score > 0.6)].slice(1, 6);
     
-    for (const item of allFoodItems) {
-      if (item.description && 
-          item.description.toLowerCase() !== dishName.toLowerCase() && 
-          !alternatives.includes(item.description)) {
-        alternatives.push(item.description);
-      }
-      if (alternatives.length >= 3) break;
-    }
-
-    // If we couldn't find enough alternatives, add some generic ones based on the cuisine
-    while (alternatives.length < 3) {
-      const cuisineOptions = {
-        "Italian": ["Pasta Carbonara", "Margherita Pizza", "Risotto", "Lasagna"],
-        "Mexican": ["Beef Tacos", "Chicken Quesadilla", "Guacamole", "Enchiladas"],
-        "Chinese": ["Kung Pao Chicken", "Fried Rice", "Dumplings", "Chow Mein"],
-        "Japanese": ["Sushi Rolls", "Ramen", "Tempura", "Miso Soup"],
-        "Indian": ["Butter Chicken", "Vegetable Curry", "Naan Bread", "Tikka Masala"],
-        "Thai": ["Pad Thai", "Green Curry", "Tom Yum Soup", "Spring Rolls"],
-        "American": ["Cheeseburger", "BBQ Ribs", "Mac and Cheese", "Fried Chicken"]
-      };
+    // Identify dish name
+    let dishName = '';
+    let confidence = 0;
+    let alternatives: string[] = [];
+    
+    // First check web labels (usually most accurate for named dishes)
+    if (webLabels && webLabels.length > 0) {
+      dishName = webLabels[0].label.replace('food', '').replace('recipe', '').replace('dish', '').trim();
+      confidence = 0.9;
       
-      const options = cuisineOptions[cuisine] || [
-        "Pasta Carbonara", "Chicken Curry", "Beef Stir Fry", 
-        "Vegetable Soup", "Caesar Salad", "Mushroom Risotto"
-      ];
+      // Add alternatives based on top web entities
+      const filteredEntities = webEntities
+        .filter((entity: any) => entity.description && entity.description !== dishName)
+        .slice(0, 5);
       
-      const randomOption = options[Math.floor(Math.random() * options.length)];
-      if (!alternatives.includes(randomOption) && randomOption.toLowerCase() !== dishName.toLowerCase()) {
-        alternatives.push(randomOption);
+      for (const entity of filteredEntities) {
+        if (entity.description && entity.description.length > 3) {
+          alternatives.push(entity.description);
+          if (alternatives.length >= 3) break;
+        }
+      }
+    } 
+    // If no web labels, use top label
+    else if (labels.length > 0) {
+      dishName = labels[0].description;
+      confidence = labels[0].score;
+      
+      // Add alternatives based on other top labels
+      for (let i = 1; i < Math.min(labels.length, 4); i++) {
+        alternatives.push(labels[i].description);
       }
     }
-
-    // Enhance the dish name if it's too generic
-    if (dishName.toLowerCase() === "food" || dishName.toLowerCase() === "dish" || dishName.toLowerCase() === "meal") {
-      // Use the first alternative or a cuisine-based default
-      dishName = alternatives[0] || `${cuisine} Dish`;
+    
+    // If dishName contains food, recipe, or dish without other information
+    if (dishName.match(/^(food|recipe|dish)$/i)) {
+      // Use the first web entity with good score instead
+      for (const entity of webEntities) {
+        if (entity.score >= 0.5 && !entity.description.match(/^(food|recipe|dish)$/i)) {
+          dishName = entity.description;
+          confidence = entity.score;
+          break;
+        }
+      }
     }
-
+    
+    // If still no good dish name, try combining labels
+    if (!dishName || dishName.length < 3) {
+      const relevantLabels = labels
+        .filter((label: any) => !label.description.match(/^(food|recipe|dish|meal|cuisine)$/i))
+        .slice(0, 2);
+      
+      if (relevantLabels.length > 0) {
+        dishName = relevantLabels.map((label: any) => label.description).join(" ");
+        confidence = relevantLabels[0].score;
+      }
+    }
+    
+    // Default if all else fails
+    if (!dishName || dishName.length < 3) {
+      dishName = "Food Dish";
+      confidence = 0.5;
+    }
+    
+    // Clean up dish name
+    dishName = dishName
+      .replace(/^photo of /i, '')
+      .replace(/^picture of /i, '')
+      .replace(/^image of /i, '')
+      .replace(/^a /i, '')
+      .replace(/^an /i, '')
+      .replace(/^the /i, '')
+      .trim();
+    
+    // Capitalize first letter of each word in dish name
+    dishName = dishName.split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+    
+    console.log("Final result:", { dishName, cuisine, confidence, alternatives });
+    
+    // Return the results
     return new Response(
       JSON.stringify({
         dishName,
         cuisine,
         confidence,
         alternatives,
-        // Include extra data that might be useful for debugging
         visionDetails: {
-          topLabels: labels.slice(0, 5).map(l => ({ description: l.description, score: l.score })),
-          topWebEntities: webEntities.slice(0, 5).map(e => ({ description: e.description, score: e.score })),
-          webBestGuess: webLabels ? webLabels.map(l => l.label) : [],
-          topObjects: localizedObjects.slice(0, 5).map(o => ({ name: o.name, score: o.score }))
+          topLabels: labels.slice(0, 5).map((l: any) => l.description),
+          topWebEntities: webEntities.slice(0, 5).map((e: any) => e.description)
         }
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
-    console.error("Error processing image:", error);
+    console.error("Error in identify-recipe function:", error);
+    
     return new Response(
-      JSON.stringify({ error: "Failed to process image", details: error.message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ 
+        error: "Failed to analyze image", 
+        details: error.message 
+      }),
+      { 
+        status: 500, 
+        headers: { ...corsHeaders, "Content-Type": "application/json" } 
+      }
     );
   }
 });

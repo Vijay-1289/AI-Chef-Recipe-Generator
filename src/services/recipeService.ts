@@ -1,3 +1,4 @@
+
 import { Recipe, VideoGeneration } from "@/types/recipe";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -16,14 +17,38 @@ export const analyzeImage = async (file: File): Promise<{
     const formData = new FormData();
     formData.append("image", file);
 
-    // Call our Supabase Edge Function
-    const { data, error } = await supabase.functions.invoke("identify-recipe", {
-      body: formData,
-    });
+    // Call our Supabase Edge Function with retry logic
+    let attempts = 0;
+    const maxAttempts = 3;
+    let data;
+    let error;
+    
+    while (attempts < maxAttempts) {
+      attempts++;
+      console.log(`Attempt ${attempts} to identify recipe`);
+      
+      const response = await supabase.functions.invoke("identify-recipe", {
+        body: formData,
+      });
+      
+      data = response.data;
+      error = response.error;
+      
+      if (!error && data) {
+        break;
+      }
+      
+      // Wait before retrying (exponential backoff)
+      if (attempts < maxAttempts) {
+        const delay = 1000 * Math.pow(2, attempts - 1);
+        console.log(`Retrying after ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
 
-    if (error) {
-      console.error("Error analyzing image:", error);
-      throw new Error(error.message);
+    if (error || !data) {
+      console.error("Error analyzing image after retries:", error);
+      throw new Error(error?.message || "Failed to analyze image");
     }
 
     return {
@@ -76,14 +101,38 @@ export const analyzeImage = async (file: File): Promise<{
 
 export const generateRecipe = async (dishName: string, cuisine?: string): Promise<Recipe> => {
   try {
-    // Call our Supabase Edge Function
-    const { data, error } = await supabase.functions.invoke("generate-recipe", {
-      body: { dishName, cuisine },
-    });
+    // Call our Supabase Edge Function with retry logic
+    let attempts = 0;
+    const maxAttempts = 3;
+    let data;
+    let error;
+    
+    while (attempts < maxAttempts) {
+      attempts++;
+      console.log(`Attempt ${attempts} to generate recipe`);
+      
+      const response = await supabase.functions.invoke("generate-recipe", {
+        body: { dishName, cuisine },
+      });
+      
+      data = response.data;
+      error = response.error;
+      
+      if (!error && data) {
+        break;
+      }
+      
+      // Wait before retrying (exponential backoff)
+      if (attempts < maxAttempts) {
+        const delay = 1000 * Math.pow(2, attempts - 1);
+        console.log(`Retrying after ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
 
-    if (error) {
-      console.error("Error generating recipe:", error);
-      throw new Error(error.message);
+    if (error || !data) {
+      console.error("Error generating recipe after retries:", error);
+      throw new Error(error?.message || "Failed to generate recipe");
     }
 
     // Return the recipe from the edge function
@@ -303,20 +352,150 @@ export const generateRecipe = async (dishName: string, cuisine?: string): Promis
   }
 };
 
+export const findRecipesByIngredients = async (ingredients: string[]): Promise<Recipe[]> => {
+  try {
+    toast.info("Searching for recipes", {
+      description: `Finding recipes using ${ingredients.length} ingredients`
+    });
+    
+    // Call our Supabase Edge Function
+    const { data, error } = await supabase.functions.invoke("find-recipes-by-ingredients", {
+      body: { ingredients },
+    });
+
+    if (error) {
+      console.error("Error finding recipes by ingredients:", error);
+      throw new Error(error.message);
+    }
+
+    return data.recipes;
+  } catch (error) {
+    console.error("Error in findRecipesByIngredients:", error);
+    toast.error("Failed to find recipes", {
+      description: "There was an error searching for recipes with your ingredients. Using fallback recipes."
+    });
+    
+    // Fallback to mock data if the edge function fails
+    return [
+      {
+        name: `${ingredients[0]} Special`,
+        description: `A simple recipe using ${ingredients.join(", ")}`,
+        cuisine: "International",
+        difficulty: "Medium",
+        cookingTime: 30,
+        servings: 4,
+        ingredients: [
+          ...ingredients.map(ing => ({ 
+            name: ing, 
+            amount: "1 cup", 
+            notes: "Or to taste" 
+          })),
+          { name: "olive oil", amount: "2 tbsp" },
+          { name: "salt", amount: "to taste" },
+          { name: "pepper", amount: "to taste" }
+        ],
+        steps: [
+          { 
+            instruction: "Prepare all ingredients as specified in the ingredients list." 
+          },
+          { 
+            instruction: `Combine ${ingredients.slice(0, 2).join(" and ")} in a bowl.` 
+          },
+          { 
+            instruction: `Add the remaining ingredients (${ingredients.slice(2).join(", ")}) and mix well.` 
+          },
+          { 
+            instruction: "Season with salt and pepper to taste.",
+            tip: "Don't overseason - you can always add more later." 
+          },
+          { 
+            instruction: "Cook over medium heat until done, about 15-20 minutes." 
+          },
+          { 
+            instruction: "Serve hot and enjoy your meal!" 
+          }
+        ]
+      },
+      {
+        name: "Quick " + ingredients[Math.floor(Math.random() * ingredients.length)] + " Mix",
+        description: "A fast and easy recipe with your available ingredients",
+        cuisine: "Fusion",
+        difficulty: "Easy",
+        cookingTime: 20,
+        servings: 2,
+        ingredients: [
+          ...ingredients.slice(0, 3).map(ing => ({ 
+            name: ing, 
+            amount: "As needed" 
+          })),
+          { name: "garlic", amount: "2 cloves", notes: "Minced" },
+          { name: "olive oil", amount: "1 tbsp" },
+          { name: "dried herbs", amount: "1 tsp", notes: "Such as oregano or thyme" }
+        ],
+        steps: [
+          { 
+            instruction: "Heat olive oil in a pan over medium heat." 
+          },
+          { 
+            instruction: "Add garlic and cook until fragrant, about 30 seconds." 
+          },
+          { 
+            instruction: `Add ${ingredients[0]} and cook for 2-3 minutes.` 
+          },
+          { 
+            instruction: `Stir in ${ingredients.slice(1).join(", ")} and dried herbs.` 
+          },
+          { 
+            instruction: "Cook until everything is heated through and well combined.",
+            tip: "Add a splash of water if the mixture seems too dry."
+          },
+          { 
+            instruction: "Serve immediately for best flavor." 
+          }
+        ]
+      }
+    ];
+  }
+};
+
 export const generateVideo = async (recipe: Recipe): Promise<string> => {
   try {
     toast.info("AI Chef video generation started", {
       description: "Our virtual chef is preparing your video tutorial"
     });
     
-    // Call our Supabase Edge Function for video generation
-    const { data, error } = await supabase.functions.invoke("generate-video", {
-      body: { recipe },
-    });
+    // Call our Supabase Edge Function for video generation with retry logic
+    let attempts = 0;
+    const maxAttempts = 3;
+    let data;
+    let error;
+    
+    while (attempts < maxAttempts) {
+      attempts++;
+      console.log(`Attempt ${attempts} to generate video`);
+      
+      const response = await supabase.functions.invoke("generate-video", {
+        body: { recipe },
+      });
+      
+      data = response.data;
+      error = response.error;
+      
+      if (!error && data) {
+        break;
+      }
+      
+      // Wait before retrying (exponential backoff)
+      if (attempts < maxAttempts) {
+        const delay = 1000 * Math.pow(2, attempts - 1);
+        console.log(`Retrying after ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
 
-    if (error) {
-      console.error("Error generating video:", error);
-      throw new Error(error.message);
+    if (error || !data) {
+      console.error("Error generating video after retries:", error);
+      throw new Error(error?.message || "Failed to generate video");
     }
 
     // If generation was successful but used a fallback, show a toast

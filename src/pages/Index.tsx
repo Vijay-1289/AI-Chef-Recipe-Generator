@@ -1,11 +1,14 @@
 
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ImageUploader from "@/components/ImageUploader";
 import ProcessingState from "@/components/ProcessingState";
 import RecipeDisplay from "@/components/RecipeDisplay";
+import IngredientSearch from "@/components/IngredientSearch";
+import IngredientRecipeList from "@/components/IngredientRecipeList";
 import { Recipe } from "@/types/recipe";
-import { analyzeImage, generateRecipe, generateVideo } from "@/services/recipeService";
+import { analyzeImage, generateRecipe, generateVideo, findRecipesByIngredients } from "@/services/recipeService";
 
 const Index = () => {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
@@ -15,6 +18,9 @@ const Index = () => {
   const [progress, setProgress] = useState(0);
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [searchMode, setSearchMode] = useState<'image' | 'ingredients'>('image');
+  const [ingredientRecipes, setIngredientRecipes] = useState<Recipe[]>([]);
+  const [searchingIngredients, setSearchingIngredients] = useState(false);
 
   // Handle the image upload
   const handleImageUpload = async (file: File, previewUrl: string) => {
@@ -131,6 +137,58 @@ const Index = () => {
     }
   };
 
+  // Handle ingredient-based recipe search
+  const handleIngredientSearch = async (ingredients: string[]) => {
+    setSearchingIngredients(true);
+    setIngredientRecipes([]);
+    
+    try {
+      const recipes = await findRecipesByIngredients(ingredients);
+      setIngredientRecipes(recipes);
+      
+      if (recipes.length > 0) {
+        toast.success(`Found ${recipes.length} recipes`, {
+          description: `Recipes using ${ingredients.slice(0, 2).join(', ')}${ingredients.length > 2 ? ', and more' : ''}`,
+        });
+      } else {
+        toast.info("No recipes found", {
+          description: "Try different ingredients or fewer restrictions",
+        });
+      }
+    } catch (error) {
+      console.error("Error searching recipes by ingredients:", error);
+      toast.error("Recipe search failed", {
+        description: "There was a problem finding recipes with your ingredients."
+      });
+    } finally {
+      setSearchingIngredients(false);
+    }
+  };
+
+  // Select a recipe from the ingredients search results
+  const handleSelectRecipe = (selectedRecipe: Recipe) => {
+    setRecipe(selectedRecipe);
+    setVideoUrl(null);
+    
+    // Automatically generate a video for the selected recipe
+    handleGenerateVideo(selectedRecipe);
+  };
+
+  // Reset the state when switching tabs
+  const handleTabChange = (value: string) => {
+    if (value === 'image') {
+      setSearchMode('image');
+    } else if (value === 'ingredients') {
+      setSearchMode('ingredients');
+      // Only reset if we're actually showing a recipe
+      if (recipe && !processing) {
+        setRecipe(null);
+        setVideoUrl(null);
+        setUploadedImage(null);
+      }
+    }
+  };
+
   return (
     <main className="min-h-screen bg-background">
       {/* Header */}
@@ -140,18 +198,46 @@ const Index = () => {
             COOK-KEY
           </h1>
           <p className="text-muted-foreground max-w-2xl mx-auto animate-fade-in">
-            Your AI Culinary Assistant: Just Snap a Photo and Get a Recipe!
+            Your AI Culinary Assistant: Get Recipes from Photos or Ingredients!
           </p>
         </div>
       </header>
 
       {/* Main Content */}
-      <div className="container px-6 py-8">
+      <div className="container px-6 py-4">
         {!recipe && !processing && (
-          <ImageUploader 
-            onImageUpload={handleImageUpload} 
-            isProcessing={processing}
-          />
+          <Tabs 
+            defaultValue="image" 
+            onValueChange={handleTabChange}
+            className="w-full max-w-4xl mx-auto"
+          >
+            <TabsList className="grid grid-cols-2 w-full max-w-md mx-auto mb-8">
+              <TabsTrigger value="image">Photo to Recipe</TabsTrigger>
+              <TabsTrigger value="ingredients">Ingredients to Recipe</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="image" className="mt-0">
+              <ImageUploader 
+                onImageUpload={handleImageUpload} 
+                isProcessing={processing}
+              />
+            </TabsContent>
+            
+            <TabsContent value="ingredients" className="mt-0">
+              <IngredientSearch 
+                onSearch={handleIngredientSearch}
+                isSearching={searchingIngredients}
+              />
+              
+              {!searchingIngredients && ingredientRecipes.length > 0 && !recipe && (
+                <IngredientRecipeList 
+                  recipes={ingredientRecipes}
+                  onSelectRecipe={handleSelectRecipe}
+                  isLoading={searchingIngredients}
+                />
+              )}
+            </TabsContent>
+          </Tabs>
         )}
 
         {processing && (
@@ -161,10 +247,10 @@ const Index = () => {
           />
         )}
 
-        {recipe && !processing && uploadedImage && (
+        {recipe && !processing && (
           <RecipeDisplay 
             recipe={recipe} 
-            imageUrl={uploadedImage}
+            imageUrl={uploadedImage || (recipe.imageUrl || '')}
             onGenerateVideo={() => handleGenerateVideo()}
             videoUrl={videoUrl || undefined}
           />
