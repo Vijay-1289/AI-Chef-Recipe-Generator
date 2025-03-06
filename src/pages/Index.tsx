@@ -1,13 +1,172 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+
+import React, { useState, useEffect } from "react";
+import { toast } from "sonner";
+import ImageUploader from "@/components/ImageUploader";
+import ProcessingState from "@/components/ProcessingState";
+import RecipeDisplay from "@/components/RecipeDisplay";
+import { Recipe } from "@/types/recipe";
+import { analyzeImage, generateRecipe, generateVideo } from "@/services/recipeService";
 
 const Index = () => {
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [originalFile, setOriginalFile] = useState<File | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [processingStage, setProcessingStage] = useState<'analyzing' | 'generating' | 'creating-video'>('analyzing');
+  const [progress, setProgress] = useState(0);
+  const [recipe, setRecipe] = useState<Recipe | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+
+  // Handle the image upload
+  const handleImageUpload = async (file: File, previewUrl: string) => {
+    setUploadedImage(previewUrl);
+    setOriginalFile(file);
+    setProcessing(true);
+    setProcessingStage('analyzing');
+    setProgress(0);
+    setRecipe(null);
+    setVideoUrl(null);
+
+    try {
+      // Simulate progress for dish recognition
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return 90;
+          }
+          return prev + 10;
+        });
+      }, 300);
+
+      // Analyze the image
+      const analysis = await analyzeImage(file);
+      clearInterval(progressInterval);
+      setProgress(100);
+
+      // Show the detected dish
+      toast.success("Dish identified", {
+        description: `We detected ${analysis.dishName} with ${(analysis.confidence * 100).toFixed(0)}% confidence`
+      });
+      
+      // Start recipe generation
+      setProcessingStage('generating');
+      setProgress(0);
+      
+      // Simulate progress for recipe generation
+      const recipeProgressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(recipeProgressInterval);
+            return 90;
+          }
+          return prev + 5;
+        });
+      }, 300);
+
+      // Generate the recipe
+      const generatedRecipe = await generateRecipe(analysis.dishName);
+      clearInterval(recipeProgressInterval);
+      setProgress(100);
+      
+      // Show the recipe
+      setRecipe(generatedRecipe);
+      setProcessing(false);
+      
+    } catch (error) {
+      console.error("Error processing image:", error);
+      toast.error("Failed to process image", {
+        description: "There was a problem analyzing your image. Please try again."
+      });
+      setProcessing(false);
+    }
+  };
+
+  // Handle video generation
+  const handleGenerateVideo = async () => {
+    if (!recipe) return;
+    
+    setProcessing(true);
+    setProcessingStage('creating-video');
+    setProgress(0);
+    
+    try {
+      // Simulate progress for video generation
+      const videoProgressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(videoProgressInterval);
+            return 90;
+          }
+          return prev + 3;
+        });
+      }, 300);
+
+      // Generate the video
+      const videoUrl = await generateVideo(recipe);
+      clearInterval(videoProgressInterval);
+      setProgress(100);
+      
+      // Show the video
+      setVideoUrl(videoUrl);
+      toast.success("Video created", {
+        description: "Your AI chef video is ready to watch!"
+      });
+      
+    } catch (error) {
+      console.error("Error generating video:", error);
+      toast.error("Failed to generate video", {
+        description: "There was a problem creating your video. Please try again."
+      });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to Your Blank App</h1>
-        <p className="text-xl text-gray-600">Start building your amazing project here!</p>
+    <main className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="w-full py-8 px-6 text-center">
+        <div className="max-w-4xl mx-auto space-y-2">
+          <h1 className="text-4xl md:text-5xl font-serif font-semibold tracking-tight animate-fade-in-down">
+            AI Recipe Generator
+          </h1>
+          <p className="text-muted-foreground max-w-2xl mx-auto animate-fade-in">
+            Upload a photo of any dish and our AI will create a detailed recipe and cooking video
+          </p>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <div className="container px-6 py-8">
+        {!recipe && !processing && (
+          <ImageUploader 
+            onImageUpload={handleImageUpload} 
+            isProcessing={processing}
+          />
+        )}
+
+        {processing && (
+          <ProcessingState 
+            stage={processingStage} 
+            progress={progress}
+          />
+        )}
+
+        {recipe && !processing && uploadedImage && (
+          <RecipeDisplay 
+            recipe={recipe} 
+            imageUrl={uploadedImage}
+            onGenerateVideo={handleGenerateVideo}
+            videoUrl={videoUrl || undefined}
+          />
+        )}
       </div>
-    </div>
+
+      {/* Footer */}
+      <footer className="w-full py-6 px-6 text-center text-muted-foreground text-sm">
+        <p>AI Recipe Generator - A Hackathon Project</p>
+      </footer>
+    </main>
   );
 };
 
