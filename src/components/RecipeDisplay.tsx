@@ -65,32 +65,40 @@ const RecipeDisplay: React.FC<RecipeDisplayProps> = ({
             </div>
           </div>
 
-          {/* Video section */}
+          {/* Enhanced Video section with AI avatar explanation */}
           <div className="space-y-4">
             <div className="relative">
               {videoUrl ? (
                 <div className="rounded-lg overflow-hidden bg-black">
-                  <video 
-                    src={videoUrl} 
-                    controls 
-                    poster={imageUrl}
-                    className="w-full h-auto"
-                  ></video>
+                  <div className="relative pt-[56.25%]">
+                    <video 
+                      src={videoUrl} 
+                      controls 
+                      poster={imageUrl}
+                      className="absolute top-0 left-0 w-full h-full"
+                    ></video>
+                  </div>
+                  <div className="p-4 bg-secondary/30">
+                    <h3 className="font-medium text-base">AI Chef Explanation</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Watch as our AI chef walks you through each step of preparing {recipe.name}.
+                    </p>
+                  </div>
                 </div>
               ) : (
                 <div className="p-6 border rounded-lg bg-secondary/30">
                   <div className="flex flex-col items-center gap-3 text-center">
-                    <ChefHat className="w-6 h-6 text-muted-foreground" />
+                    <ChefHat className="w-8 h-8 text-primary/80" />
                     <h3 className="font-medium">AI Chef Video</h3>
                     <p className="text-sm text-muted-foreground">
-                      Generate a cooking video with step-by-step instructions
+                      Generate a video with our AI chef explaining how to prepare this dish step-by-step
                     </p>
                     <Button 
                       onClick={onGenerateVideo}
                       className="mt-2 gap-2"
                     >
                       <PlayCircle className="w-4 h-4" />
-                      Generate Video
+                      Generate Chef Video
                     </Button>
                   </div>
                 </div>

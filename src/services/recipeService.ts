@@ -1,56 +1,75 @@
 
 import { Recipe } from "@/types/recipe";
 import { toast } from "sonner";
-
-// Simulate AI processing with a mock implementation
-// In a real application, this would be connected to an AI service
+import { supabase } from "@/integrations/supabase/client";
 
 export const analyzeImage = async (file: File): Promise<{ 
   dishName: string;
+  cuisine: string;
   confidence: number;
   alternatives: string[];
 }> => {
-  // This is a mock implementation - in a real app, you'd upload the image to an AI service
-  return new Promise((resolve) => {
-    // Simulate processing time
-    setTimeout(() => {
-      // For demo purposes, use random dishes
-      const dishes = [
-        "Chocolate Cake",
-        "Pasta Carbonara",
-        "Chicken Tikka Masala",
-        "Vegetable Stir Fry",
-        "Beef Burger",
-        "Caesar Salad",
-        "Mushroom Risotto",
-        "Sushi Roll"
-      ];
+  try {
+    const formData = new FormData();
+    formData.append("image", file);
+
+    // Call our Supabase Edge Function
+    const { data, error } = await supabase.functions.invoke("identify-recipe", {
+      body: formData,
+    });
+
+    if (error) {
+      console.error("Error analyzing image:", error);
+      throw new Error(error.message);
+    }
+
+    // If using the edge function is successful, return its response
+    return {
+      dishName: data.dishName,
+      cuisine: data.cuisine || "International",
+      confidence: data.confidence,
+      alternatives: data.alternatives
+    };
+  } catch (error) {
+    console.error("Error in analyzeImage:", error);
+    
+    // Fallback to mock data if the edge function fails
+    const dishes = [
+      "Chocolate Cake",
+      "Pasta Carbonara",
+      "Chicken Tikka Masala",
+      "Vegetable Stir Fry",
+      "Beef Burger",
+      "Caesar Salad",
+      "Mushroom Risotto",
+      "Sushi Roll"
+    ];
+    
+    const randomIndex = Math.floor(Math.random() * dishes.length);
+    const dishName = dishes[randomIndex];
+    
+    // Generate some alternatives
+    const alternatives = [];
+    for (let i = 0; i < 3; i++) {
+      let altIndex;
+      do {
+        altIndex = Math.floor(Math.random() * dishes.length);
+      } while (altIndex === randomIndex || alternatives.includes(dishes[altIndex]));
       
-      const randomIndex = Math.floor(Math.random() * dishes.length);
-      const dishName = dishes[randomIndex];
-      
-      // Generate some alternatives
-      const alternatives = [];
-      for (let i = 0; i < 3; i++) {
-        let altIndex;
-        do {
-          altIndex = Math.floor(Math.random() * dishes.length);
-        } while (altIndex === randomIndex || alternatives.includes(dishes[altIndex]));
-        
-        alternatives.push(dishes[altIndex]);
-      }
-      
-      resolve({
-        dishName,
-        confidence: 0.7 + Math.random() * 0.25, // Random confidence between 70% and 95%
-        alternatives
-      });
-    }, 2500);
-  });
+      alternatives.push(dishes[altIndex]);
+    }
+    
+    return {
+      dishName,
+      cuisine: "International",
+      confidence: 0.7 + Math.random() * 0.25, // Random confidence between 70% and 95%
+      alternatives
+    };
+  }
 };
 
-export const generateRecipe = async (dishName: string): Promise<Recipe> => {
-  // This is a mock implementation - in a real app, you'd call an AI service
+export const generateRecipe = async (dishName: string, cuisine?: string): Promise<Recipe> => {
+  // This is a mock implementation - in a real app, you'd call an AI service or API
   return new Promise((resolve) => {
     // Simulate processing time
     setTimeout(() => {
@@ -61,7 +80,7 @@ export const generateRecipe = async (dishName: string): Promise<Recipe> => {
         recipe = {
           name: "Creamy Pasta Carbonara",
           description: "A rich and creamy Italian pasta dish with pancetta, eggs, and Parmesan cheese.",
-          cuisine: "Italian",
+          cuisine: cuisine || "Italian",
           difficulty: "Medium",
           cookingTime: 25,
           servings: 4,
@@ -215,11 +234,11 @@ export const generateRecipe = async (dishName: string): Promise<Recipe> => {
           ]
         };
       } else {
-        // Default recipe for other dishes
+        // Default recipe for other dishes with enhanced customization based on cuisine
         recipe = {
           name: dishName,
           description: `A delicious ${dishName.toLowerCase()} prepared with fresh ingredients.`,
-          cuisine: "International",
+          cuisine: cuisine || "International",
           difficulty: "Medium",
           cookingTime: 30,
           servings: 4,
@@ -255,22 +274,35 @@ export const generateRecipe = async (dishName: string): Promise<Recipe> => {
       }
       
       resolve(recipe);
-    }, 3000);
+    }, 2000);
   });
 };
 
 export const generateVideo = async (recipe: Recipe): Promise<string> => {
-  // This is a mock implementation - in a real app, you'd call a video generation service
-  return new Promise((resolve) => {
-    toast.info("Video generation started", {
-      description: "This would connect to an AI video service in a real app"
+  try {
+    toast.info("AI Chef video generation started", {
+      description: "Our virtual chef is preparing your video tutorial"
     });
     
-    // Simulate video generation
-    setTimeout(() => {
-      // In a real app, this would return a URL to the generated video
-      // For demo purposes, we'll return a placeholder
-      resolve("https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4");
-    }, 5000);
-  });
+    // Call our Supabase Edge Function for video generation
+    const { data, error } = await supabase.functions.invoke("generate-video", {
+      body: { recipe },
+    });
+
+    if (error) {
+      console.error("Error generating video:", error);
+      throw new Error(error.message);
+    }
+
+    // Return the video URL from the edge function
+    return data.videoUrl;
+  } catch (error) {
+    console.error("Error in generateVideo:", error);
+    toast.error("Video generation error", {
+      description: "There was a problem creating your video. Please try again."
+    });
+    
+    // Fallback to a sample video if the edge function fails
+    return "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+  }
 };

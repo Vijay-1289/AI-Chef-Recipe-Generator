@@ -43,9 +43,9 @@ const Index = () => {
       clearInterval(progressInterval);
       setProgress(100);
 
-      // Show the detected dish
-      toast.success("Dish identified", {
-        description: `We detected ${analysis.dishName} with ${(analysis.confidence * 100).toFixed(0)}% confidence`
+      // Show the detected dish with enhanced information
+      toast.success(`Dish identified: ${analysis.dishName}`, {
+        description: `Confidence: ${(analysis.confidence * 100).toFixed(0)}% • Cuisine: ${analysis.cuisine}`
       });
       
       // Start recipe generation
@@ -63,8 +63,8 @@ const Index = () => {
         });
       }, 300);
 
-      // Generate the recipe
-      const generatedRecipe = await generateRecipe(analysis.dishName);
+      // Generate the recipe using the identified cuisine
+      const generatedRecipe = await generateRecipe(analysis.dishName, analysis.cuisine);
       clearInterval(recipeProgressInterval);
       setProgress(100);
       
@@ -81,7 +81,7 @@ const Index = () => {
     }
   };
 
-  // Handle video generation
+  // Handle AI chef video generation
   const handleGenerateVideo = async () => {
     if (!recipe) return;
     
@@ -101,21 +101,21 @@ const Index = () => {
         });
       }, 300);
 
-      // Generate the video
+      // Generate the AI chef video
       const videoUrl = await generateVideo(recipe);
       clearInterval(videoProgressInterval);
       setProgress(100);
       
       // Show the video
       setVideoUrl(videoUrl);
-      toast.success("Video created", {
-        description: "Your AI chef video is ready to watch!"
+      toast.success("AI Chef video created", {
+        description: "Your personalized cooking tutorial is ready to watch!"
       });
       
     } catch (error) {
       console.error("Error generating video:", error);
       toast.error("Failed to generate video", {
-        description: "There was a problem creating your video. Please try again."
+        description: "There was a problem creating your AI chef video. Please try again."
       });
     } finally {
       setProcessing(false);
@@ -131,7 +131,7 @@ const Index = () => {
             AI Recipe Generator
           </h1>
           <p className="text-muted-foreground max-w-2xl mx-auto animate-fade-in">
-            Upload a photo of any dish and our AI will create a detailed recipe and cooking video
+            Upload a photo of any dish and our AI will create a detailed recipe and AI chef video
           </p>
         </div>
       </header>

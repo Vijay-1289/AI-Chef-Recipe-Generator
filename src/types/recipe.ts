@@ -19,4 +19,13 @@ export interface Recipe {
   servings: number;
   ingredients: Ingredient[];
   steps: Step[];
+  imageUrl?: string;
+}
+
+export interface VideoGeneration {
+  id: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  recipeId: string;
+  videoUrl?: string;
+  createdAt: string;
 }

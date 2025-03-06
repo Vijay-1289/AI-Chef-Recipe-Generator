@@ -1,6 +1,6 @@
 
 import React from "react";
-import { Loader2Icon, SparklesIcon } from "lucide-react";
+import { Loader2Icon, SparklesIcon, CameraIcon } from "lucide-react";
 
 interface ProcessingStateProps {
   stage: 'analyzing' | 'generating' | 'creating-video';
@@ -14,7 +14,7 @@ const ProcessingState: React.FC<ProcessingStateProps> = ({ stage, progress = 0 }
         return {
           title: "Analyzing your image",
           description: "Our AI is identifying the dish and ingredients...",
-          icon: <Loader2Icon className="w-6 h-6 animate-spin" />,
+          icon: <CameraIcon className="w-6 h-6 animate-pulse" />,
         };
       case 'generating':
         return {
@@ -24,8 +24,8 @@ const ProcessingState: React.FC<ProcessingStateProps> = ({ stage, progress = 0 }
         };
       case 'creating-video':
         return {
-          title: "Creating your cooking video",
-          description: "Our AI chef is preparing a video tutorial for you...",
+          title: "Creating your AI chef video",
+          description: "Our AI chef is preparing a personalized video tutorial for you...",
           icon: <Loader2Icon className="w-6 h-6 animate-spin" />,
         };
       default:
