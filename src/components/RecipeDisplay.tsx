@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Clock, Users, ChefHat, PlayCircle, Download, Share2 } from "lucide-react";
+import { Clock, Users, ChefHat, PlayCircle, Download, Share2, Loader2 } from "lucide-react";
 import { Recipe } from "@/types/recipe";
 
 interface RecipeDisplayProps {
@@ -20,6 +20,12 @@ const RecipeDisplay: React.FC<RecipeDisplayProps> = ({
   videoUrl
 }) => {
   const [activeTab, setActiveTab] = useState("ingredients");
+  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
+
+  const handleGenerateVideo = () => {
+    setIsGeneratingVideo(true);
+    onGenerateVideo();
+  };
 
   return (
     <div className="w-full max-w-5xl mx-auto py-8 animate-fade-in">
@@ -91,14 +97,27 @@ const RecipeDisplay: React.FC<RecipeDisplayProps> = ({
                     <ChefHat className="w-8 h-8 text-primary/80" />
                     <h3 className="font-medium">AI Chef Video</h3>
                     <p className="text-sm text-muted-foreground">
-                      Generate a video with our AI chef explaining how to prepare this dish step-by-step
+                      {isGeneratingVideo 
+                        ? "Your personalized chef video is being generated. This may take 5-10 minutes to complete."
+                        : "Generate a video with our AI chef explaining how to prepare this dish step-by-step"
+                      }
                     </p>
                     <Button 
-                      onClick={onGenerateVideo}
+                      onClick={handleGenerateVideo}
                       className="mt-2 gap-2"
+                      disabled={isGeneratingVideo}
                     >
-                      <PlayCircle className="w-4 h-4" />
-                      Generate Chef Video
+                      {isGeneratingVideo ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Generating Video...
+                        </>
+                      ) : (
+                        <>
+                          <PlayCircle className="w-4 h-4" />
+                          Generate Chef Video
+                        </>
+                      )}
                     </Button>
                   </div>
                 </div>

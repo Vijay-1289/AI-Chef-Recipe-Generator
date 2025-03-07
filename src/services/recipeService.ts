@@ -1,7 +1,6 @@
-
 import { Recipe, VideoGeneration } from "@/types/recipe";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, hasSecret } from "@/integrations/supabase/client";
 
 export const analyzeImage = async (file: File): Promise<{ 
   dishName: string;
@@ -473,10 +472,20 @@ export const findRecipesByIngredients = async (ingredients: string[]): Promise<R
   }
 };
 
-export const generateVideo = async (recipe: Recipe): Promise<string> => {
+export const generateVideo = async (recipe: Recipe): Promise<string | null> => {
   try {
+    // Check if Synthesia API key is configured
+    const hasSynthesiaKey = await hasSecret('SYNTHESIA_API_KEY');
+    
+    if (!hasSynthesiaKey) {
+      toast.error("Video generation not available", {
+        description: "Synthesia API key is not configured. Please contact the administrator."
+      });
+      return null;
+    }
+    
     toast.info("AI Chef video generation started", {
-      description: "Our virtual chef is preparing your video tutorial"
+      description: "Our virtual chef is preparing your video tutorial. Please wait, this may take several minutes."
     });
     
     // Call our Supabase Edge Function for video generation with retry logic
@@ -513,22 +522,23 @@ export const generateVideo = async (recipe: Recipe): Promise<string> => {
       throw new Error(error?.message || "Failed to generate video");
     }
 
-    // If generation was successful but used a fallback, show a toast
-    if (data.fallback) {
-      toast.info("Using sample video", {
-        description: "We're showing a sample video while our AI chef prepares your custom tutorial."
+    // Handle different response statuses
+    if (data.status === "processing") {
+      toast.info("Video is being generated", {
+        description: "Your AI chef video is currently being created. This may take up to 5-10 minutes."
       });
+      return null;
+    } else if (!data.success) {
+      throw new Error(data.error || "Video generation failed");
     }
 
-    // Return the video URL from the edge function
-    return data.videoUrl;
+    return data.videoUrl || null;
   } catch (error) {
     console.error("Error in generateVideo:", error);
     toast.error("Video generation error", {
-      description: "There was a problem creating your video. Please try again."
+      description: "There was a problem creating your video. Please try again later."
     });
     
-    // Fallback to a sample video if the edge function fails
-    return "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+    return null;
   }
 };

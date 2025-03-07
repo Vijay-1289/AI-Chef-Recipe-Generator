@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { toast } from "sonner";
 import DishNameInput from "@/components/DishNameInput";
@@ -14,6 +13,7 @@ const Index = () => {
   const [progress, setProgress] = useState(0);
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
 
   const handleDishNameSubmit = async (dishName: string) => {
     setProcessing(true);
@@ -21,6 +21,7 @@ const Index = () => {
     setProgress(0);
     setRecipe(null);
     setVideoUrl(null);
+    setIsGeneratingVideo(false);
 
     try {
       const progressInterval = setInterval(() => {
@@ -40,7 +41,6 @@ const Index = () => {
 
       if (generatedRecipe) {
         setRecipe(generatedRecipe);
-        handleGenerateVideo(generatedRecipe);
       } else {
         throw new Error("Failed to generate recipe");
       }
@@ -49,46 +49,38 @@ const Index = () => {
       toast.error("Failed to generate recipe", {
         description: "There was a problem creating a recipe for this dish. Please try again."
       });
+    } finally {
       setProcessing(false);
     }
   };
 
-  const handleGenerateVideo = async (recipeToUse?: Recipe) => {
-    const recipeForVideo = recipeToUse || recipe;
-    if (!recipeForVideo) return;
+  const handleGenerateVideo = async () => {
+    if (!recipe) return;
     
-    setProcessing(true);
-    setProcessingStage('creating-video');
-    setProgress(0);
+    setIsGeneratingVideo(true);
     
     try {
-      const videoProgressInterval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(videoProgressInterval);
-            return 90;
-          }
-          return prev + 3;
+      const videoUrl = await generateVideo(recipe);
+      
+      if (videoUrl) {
+        setVideoUrl(videoUrl);
+        toast.success("AI Chef video created", {
+          description: "Your personalized cooking tutorial is ready to watch!",
+          duration: 5000
         });
-      }, 300);
-
-      const videoUrl = await generateVideo(recipeForVideo);
-      clearInterval(videoProgressInterval);
-      setProgress(100);
-      
-      setVideoUrl(videoUrl);
-      toast.success("AI Chef video created", {
-        description: "Your personalized cooking tutorial is ready to watch!",
-        duration: 5000
-      });
-      
+      } else {
+        // If no video URL returned, keep the generating state active
+        toast.info("Video generation in progress", {
+          description: "Your AI chef video is being prepared. This may take a few minutes.",
+          duration: 5000
+        });
+      }
     } catch (error) {
       console.error("Error generating video:", error);
       toast.error("Failed to generate video", {
         description: "There was a problem creating your AI chef video. Please try again."
       });
-    } finally {
-      setProcessing(false);
+      setIsGeneratingVideo(false);
     }
   };
 
