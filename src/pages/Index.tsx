@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,6 +8,7 @@ import IngredientSearch from "@/components/IngredientSearch";
 import IngredientRecipeList from "@/components/IngredientRecipeList";
 import { Recipe } from "@/types/recipe";
 import { analyzeImage, generateRecipe, generateVideo, findRecipesByIngredients } from "@/services/recipeService";
+import { ChefHat, Utensils, Sparkles } from "lucide-react";
 
 const Index = () => {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
@@ -22,7 +22,6 @@ const Index = () => {
   const [ingredientRecipes, setIngredientRecipes] = useState<Recipe[]>([]);
   const [searchingIngredients, setSearchingIngredients] = useState(false);
 
-  // Handle the image upload
   const handleImageUpload = async (file: File, previewUrl: string) => {
     setUploadedImage(previewUrl);
     setOriginalFile(file);
@@ -33,7 +32,6 @@ const Index = () => {
     setVideoUrl(null);
 
     try {
-      // Simulate progress for dish recognition
       const progressInterval = setInterval(() => {
         setProgress(prev => {
           if (prev >= 90) {
@@ -44,22 +42,18 @@ const Index = () => {
         });
       }, 300);
 
-      // Analyze the image
       const analysis = await analyzeImage(file);
       clearInterval(progressInterval);
       setProgress(100);
 
-      // Show detailed toast about the detected dish
       toast.success(`Identified: ${analysis.dishName}`, {
         description: `Confidence: ${(analysis.confidence * 100).toFixed(0)}% • Cuisine: ${analysis.cuisine}`,
         duration: 5000
       });
-      
-      // Start recipe generation
+
       setProcessingStage('generating');
       setProgress(0);
-      
-      // Simulate progress for recipe generation
+
       const recipeProgressInterval = setInterval(() => {
         setProgress(prev => {
           if (prev >= 90) {
@@ -70,21 +64,17 @@ const Index = () => {
         });
       }, 300);
 
-      // Generate the recipe using the identified cuisine
       const generatedRecipe = await generateRecipe(analysis.dishName, analysis.cuisine);
       clearInterval(recipeProgressInterval);
       setProgress(100);
-      
-      // Show the recipe
+
       setRecipe(generatedRecipe);
-      
-      // Automatically start generating the video if the recipe was successfully generated
+
       if (generatedRecipe) {
         handleGenerateVideo(generatedRecipe);
       } else {
         setProcessing(false);
       }
-      
     } catch (error) {
       console.error("Error processing image:", error);
       toast.error("Failed to process image", {
@@ -94,7 +84,6 @@ const Index = () => {
     }
   };
 
-  // Handle AI chef video generation
   const handleGenerateVideo = async (recipeToUse?: Recipe) => {
     const recipeForVideo = recipeToUse || recipe;
     if (!recipeForVideo) return;
@@ -104,7 +93,6 @@ const Index = () => {
     setProgress(0);
     
     try {
-      // Simulate progress for video generation
       const videoProgressInterval = setInterval(() => {
         setProgress(prev => {
           if (prev >= 90) {
@@ -115,12 +103,10 @@ const Index = () => {
         });
       }, 300);
 
-      // Generate the AI chef video
       const videoUrl = await generateVideo(recipeForVideo);
       clearInterval(videoProgressInterval);
       setProgress(100);
       
-      // Show the video
       setVideoUrl(videoUrl);
       toast.success("AI Chef video created", {
         description: "Your personalized cooking tutorial is ready to watch!",
@@ -137,7 +123,6 @@ const Index = () => {
     }
   };
 
-  // Handle ingredient-based recipe search
   const handleIngredientSearch = async (ingredients: string[]) => {
     setSearchingIngredients(true);
     setIngredientRecipes([]);
@@ -165,22 +150,18 @@ const Index = () => {
     }
   };
 
-  // Select a recipe from the ingredients search results
   const handleSelectRecipe = (selectedRecipe: Recipe) => {
     setRecipe(selectedRecipe);
     setVideoUrl(null);
     
-    // Automatically generate a video for the selected recipe
     handleGenerateVideo(selectedRecipe);
   };
 
-  // Reset the state when switching tabs
   const handleTabChange = (value: string) => {
     if (value === 'image') {
       setSearchMode('image');
     } else if (value === 'ingredients') {
       setSearchMode('ingredients');
-      // Only reset if we're actually showing a recipe
       if (recipe && !processing) {
         setRecipe(null);
         setVideoUrl(null);
@@ -190,30 +171,42 @@ const Index = () => {
   };
 
   return (
-    <main className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="w-full py-8 px-6 text-center">
-        <div className="max-w-4xl mx-auto space-y-2">
-          <h1 className="text-4xl md:text-5xl font-serif font-semibold tracking-tight animate-fade-in-down">
-            COOK-KEY
-          </h1>
-          <p className="text-muted-foreground max-w-2xl mx-auto animate-fade-in">
+    <main className="min-h-screen bg-background bg-gradient-to-b from-background via-background to-secondary/10">
+      <header className="w-full py-10 px-6 text-center bg-gradient-to-b from-primary/5 to-background">
+        <div className="max-w-4xl mx-auto space-y-4">
+          <div className="flex items-center justify-center gap-3">
+            <ChefHat className="h-10 w-10 text-primary animate-bounce" />
+            <h1 className="text-5xl md:text-6xl font-serif font-semibold tracking-tight animate-fade-in-down bg-gradient-to-r from-primary/90 to-primary bg-clip-text text-transparent">
+              COOK-KEY
+            </h1>
+            <Utensils className="h-8 w-8 text-primary/80 animate-pulse" />
+          </div>
+          <p className="text-muted-foreground max-w-2xl mx-auto animate-fade-in text-lg">
             Your AI Culinary Assistant: Get Recipes from Photos or Ingredients!
           </p>
+          <div className="flex justify-center">
+            <span className="inline-flex items-center px-3 py-1 text-xs rounded-full bg-primary/10 text-primary gap-1">
+              <Sparkles className="h-3 w-3" />
+              Powered by Advanced AI
+            </span>
+          </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="container px-6 py-4">
+      <div className="container px-6 py-8">
         {!recipe && !processing && (
           <Tabs 
             defaultValue="image" 
             onValueChange={handleTabChange}
             className="w-full max-w-4xl mx-auto"
           >
-            <TabsList className="grid grid-cols-2 w-full max-w-md mx-auto mb-8">
-              <TabsTrigger value="image">Photo to Recipe</TabsTrigger>
-              <TabsTrigger value="ingredients">Ingredients to Recipe</TabsTrigger>
+            <TabsList className="grid grid-cols-2 w-full max-w-md mx-auto mb-8 bg-secondary/40 p-1">
+              <TabsTrigger value="image" className="data-[state=active]:bg-primary/90 data-[state=active]:text-white">
+                Photo to Recipe
+              </TabsTrigger>
+              <TabsTrigger value="ingredients" className="data-[state=active]:bg-primary/90 data-[state=active]:text-white">
+                Ingredients to Recipe
+              </TabsTrigger>
             </TabsList>
             
             <TabsContent value="image" className="mt-0">
@@ -257,9 +250,13 @@ const Index = () => {
         )}
       </div>
 
-      {/* Footer */}
-      <footer className="w-full py-6 px-6 text-center text-muted-foreground text-sm">
-        <p>COOK-KEY - Your AI-Powered Culinary Assistant</p>
+      <footer className="w-full py-8 px-6 text-center text-muted-foreground">
+        <div className="max-w-4xl mx-auto border-t pt-6">
+          <p className="flex items-center justify-center gap-2">
+            <ChefHat className="h-4 w-4 text-primary/70" />
+            COOK-KEY - Your AI-Powered Culinary Assistant
+          </p>
+        </div>
       </footer>
     </main>
   );

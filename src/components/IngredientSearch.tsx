@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, X, Search } from "lucide-react";
+import { Plus, X, Search, CookingPot, Carrot, Apple } from "lucide-react";
 import { toast } from "sonner";
 
 interface IngredientSearchProps {
@@ -47,10 +47,24 @@ const IngredientSearch: React.FC<IngredientSearchProps> = ({ onSearch, isSearchi
     onSearch(ingredients);
   };
 
+  // Predefined common ingredients for quick selection
+  const commonIngredients = [
+    "chicken", "beef", "pork", "rice", "pasta", "potatoes", "tomatoes", "onions", "garlic", "eggs"
+  ];
+
+  const handleQuickAdd = (ingredient: string) => {
+    if (ingredients.includes(ingredient)) {
+      toast.error("Ingredient already added");
+      return;
+    }
+    setIngredients([...ingredients, ingredient]);
+  };
+
   return (
-    <div className="w-full max-w-2xl mx-auto p-6 border rounded-xl bg-secondary/10 space-y-6">
+    <div className="w-full max-w-2xl mx-auto p-6 border rounded-xl bg-gradient-to-br from-background to-secondary/20 space-y-6">
       <div className="space-y-2">
-        <h3 className="text-xl font-serif font-semibold tracking-tight">
+        <h3 className="text-2xl font-serif font-semibold tracking-tight flex items-center gap-2">
+          <CookingPot className="h-6 w-6 text-primary" />
           Find Recipes By Ingredients
         </h3>
         <p className="text-muted-foreground">
@@ -71,32 +85,65 @@ const IngredientSearch: React.FC<IngredientSearchProps> = ({ onSearch, isSearchi
         </Button>
       </div>
       
+      {/* Quick add common ingredients */}
+      <div className="flex flex-wrap gap-2">
+        {commonIngredients.slice(0, 7).map((ingredient) => (
+          <button
+            key={ingredient}
+            onClick={() => handleQuickAdd(ingredient)}
+            className={`px-2 py-1 text-xs rounded-full border transition-colors 
+              ${ingredients.includes(ingredient) 
+                ? 'bg-primary/10 border-primary/30 text-primary/70 cursor-not-allowed' 
+                : 'bg-secondary hover:bg-primary/10 hover:border-primary/30 hover:text-primary'}`}
+            disabled={ingredients.includes(ingredient)}
+          >
+            + {ingredient}
+          </button>
+        ))}
+      </div>
+      
       {ingredients.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {ingredients.map((ingredient, index) => (
-            <div
-              key={index}
-              className="flex items-center gap-1 px-3 py-1 rounded-full bg-secondary text-sm"
-            >
-              <span>{ingredient}</span>
-              <button
-                onClick={() => handleRemoveIngredient(index)}
-                className="text-muted-foreground hover:text-foreground"
+        <div className="p-3 bg-background rounded-lg border">
+          <div className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-1">
+            <Carrot className="h-4 w-4" />
+            Your ingredients:
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {ingredients.map((ingredient, index) => (
+              <div
+                key={index}
+                className="flex items-center gap-1 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm"
               >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ))}
+                <span>{ingredient}</span>
+                <button
+                  onClick={() => handleRemoveIngredient(index)}
+                  className="text-primary/70 hover:text-primary transition-colors"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       
       <Button 
         onClick={handleSearch}
-        className="w-full gap-2"
+        className="w-full gap-2 bg-primary/90 hover:bg-primary"
+        size="lg"
         disabled={ingredients.length === 0 || isSearching}
       >
-        <Search className="h-4 w-4" />
-        {isSearching ? "Searching..." : "Find Recipes"}
+        {isSearching ? (
+          <>
+            <Search className="h-4 w-4 animate-pulse" />
+            Searching...
+          </>
+        ) : (
+          <>
+            <Search className="h-4 w-4" />
+            Find Recipes
+          </>
+        )}
       </Button>
     </div>
   );

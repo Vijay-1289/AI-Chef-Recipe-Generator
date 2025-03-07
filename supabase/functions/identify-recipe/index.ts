@@ -51,8 +51,9 @@ serve(async (req) => {
         requests: [
           {
             features: [
-              { type: 'LABEL_DETECTION', maxResults: 10 },
-              { type: 'WEB_DETECTION', maxResults: 10 }
+              { type: 'LABEL_DETECTION', maxResults: 15 }, // Increased from 10 to 15
+              { type: 'WEB_DETECTION', maxResults: 15 }, // Increased from 10 to 15
+              { type: 'TEXT_DETECTION' } // Added text detection to identify food labels or menu items
             ],
             image: {
               content: base64Image
@@ -74,14 +75,16 @@ serve(async (req) => {
     // Process results from Vision API
     const response = visionData.responses[0];
     
-    // Extract labels
+    // Extract labels, web entities, and text
     const labels = response.labelAnnotations || [];
     const webEntities = response.webDetection?.webEntities || [];
     const webLabels = response.webDetection?.bestGuessLabels || [];
+    const textAnnotations = response.textAnnotations || [];
     
-    console.log("Top labels:", labels.slice(0, 3).map((l: any) => l.description));
-    console.log("Web entities:", webEntities.slice(0, 3).map((e: any) => e.description));
+    console.log("Top labels:", labels.slice(0, 5).map((l: any) => l.description));
+    console.log("Web entities:", webEntities.slice(0, 5).map((e: any) => e.description));
     console.log("Web labels:", webLabels.map((l: any) => l.label));
+    console.log("Text detected:", textAnnotations[0]?.description.slice(0, 100));
     
     // Look for food-related labels
     const foodLabels = labels.filter((label: any) => {
@@ -90,66 +93,170 @@ serve(async (req) => {
              description.includes('dish') || 
              description.includes('cuisine') ||
              description.includes('meal') ||
-             description.includes('recipe');
+             description.includes('recipe') ||
+             description.includes('menu') ||
+             description.includes('restaurant') ||
+             description.includes('cooking') ||
+             description.includes('baking') ||
+             description.includes('dessert') ||
+             description.includes('breakfast') ||
+             description.includes('lunch') ||
+             description.includes('dinner');
     });
     
-    // Find cuisine mentions
+    // Expanded list of cuisine keywords
     const cuisineKeywords = [
-      'Italian', 'Chinese', 'Indian', 'Mexican', 'Japanese', 'Thai', 
-      'French', 'Greek', 'Spanish', 'Mediterranean', 'American', 'Korean',
-      'Vietnamese', 'Turkish', 'Lebanese', 'Moroccan', 'Brazilian'
+      // Western cuisines
+      'Italian', 'French', 'Spanish', 'Mediterranean', 'Greek', 'American', 'British', 'German', 
+      'Belgian', 'Russian', 'Portuguese', 'Scandinavian', 'Nordic', 'Irish', 'Scottish', 'Welsh',
+      'Austrian', 'Swiss', 'Dutch', 'Polish', 'Hungarian', 'Czech', 'Balkan',
+      
+      // Asian cuisines
+      'Chinese', 'Japanese', 'Thai', 'Korean', 'Vietnamese', 'Indian', 'Pakistani', 'Nepalese', 
+      'Indonesian', 'Malaysian', 'Singaporean', 'Filipino', 'Cambodian', 'Burmese', 'Laotian', 
+      'Mongolian', 'Tibetan', 'Sri Lankan', 'Bangladeshi', 'Central Asian', 'Uyghur',
+      
+      // Middle Eastern and African cuisines
+      'Turkish', 'Lebanese', 'Syrian', 'Persian', 'Iraqi', 'Israeli', 'Moroccan', 'Egyptian', 
+      'Ethiopian', 'Tunisian', 'Algerian', 'Libyan', 'West African', 'East African', 
+      'South African', 'Nigerian', 'Ghanaian', 'Kenyan', 'Somali', 'Sudanese',
+      
+      // Latin American cuisines
+      'Mexican', 'Brazilian', 'Peruvian', 'Argentinian', 'Colombian', 'Chilean', 'Venezuelan', 
+      'Cuban', 'Puerto Rican', 'Dominican', 'Jamaican', 'Caribbean', 'Haitian', 'Trinidadian', 
+      'Ecuadorian', 'Uruguayan', 'Paraguayan', 'Bolivian', 'Central American', 'Guatemalan',
+      
+      // Regional American cuisines
+      'Cajun', 'Creole', 'Southern', 'Tex-Mex', 'New England', 'Midwestern', 'Hawaiian', 
+      'Californian', 'Southwestern', 'Pacific Northwest', 'Alaskan', 'Soul Food', 'Barbecue',
+      
+      // Cooking styles and dietary patterns
+      'Vegan', 'Vegetarian', 'Pescatarian', 'Kosher', 'Halal', 'Gluten-free', 'Paleo', 
+      'Keto', 'Low-carb', 'Plant-based', 'Raw', 'Fusion', 'Slow-cooked', 'Smoked', 
+      'Grilled', 'Baked', 'Fried', 'Roasted', 'Steamed', 'Stir-fried', 'Fermented'
     ];
     
+    // Check for cuisine mentions in entities, labels and text
     let cuisine = '';
-    for (const entity of [...labels, ...webEntities]) {
-      const entityName = entity.description || '';
+    
+    // First check if any text directly mentions a cuisine
+    if (textAnnotations.length > 0) {
+      const detectedText = textAnnotations[0].description.toLowerCase();
       for (const keyword of cuisineKeywords) {
-        if (entityName.includes(keyword)) {
+        if (detectedText.includes(keyword.toLowerCase())) {
           cuisine = keyword;
           break;
         }
       }
-      if (cuisine) break;
     }
     
-    // Identify dish name
+    // If no cuisine found in text, check other sources
+    if (!cuisine) {
+      for (const entity of [...labels, ...webEntities]) {
+        const entityName = (entity.description || '').toLowerCase();
+        for (const keyword of cuisineKeywords) {
+          if (entityName.includes(keyword.toLowerCase())) {
+            cuisine = keyword;
+            break;
+          }
+        }
+        if (cuisine) break;
+      }
+    }
+    
+    // Additional food types recognition (beyond just names of dishes)
+    const foodCategories = [
+      'Pasta', 'Noodles', 'Rice', 'Soup', 'Salad', 'Sandwich', 'Burger', 'Pizza', 'Stew', 
+      'Curry', 'Stir-fry', 'Roast', 'Grill', 'Barbeque', 'BBQ', 'Seafood', 'Fish', 'Sushi', 
+      'Dumpling', 'Bread', 'Pastry', 'Cake', 'Pie', 'Dessert', 'Ice cream', 'Gelato', 
+      'Breakfast', 'Brunch', 'Lunch', 'Dinner', 'Appetizer', 'Entree', 'Main course', 
+      'Side dish', 'Snack', 'Beverage', 'Drink', 'Cocktail', 'Smoothie', 'Juice'
+    ];
+    
+    let foodCategory = '';
+    for (const entity of [...labels, ...webEntities]) {
+      const entityName = (entity.description || '').toLowerCase();
+      for (const category of foodCategories) {
+        if (entityName.includes(category.toLowerCase())) {
+          foodCategory = category;
+          break;
+        }
+      }
+      if (foodCategory) break;
+    }
+    
+    // Identify dish name with improved logic
     let dishName = '';
     let confidence = 0;
     let alternatives: string[] = [];
     
     // First check web labels (usually most accurate for named dishes)
     if (webLabels && webLabels.length > 0) {
-      dishName = webLabels[0].label.replace('food', '').replace('recipe', '').replace('dish', '').trim();
+      dishName = webLabels[0].label.replace(/\bfood\b/i, '')
+                              .replace(/\brecipe\b/i, '')
+                              .replace(/\bdish\b/i, '')
+                              .replace(/\bmeal\b/i, '')
+                              .trim();
       confidence = 0.9;
       
       // Add alternatives based on top web entities
       const filteredEntities = webEntities
-        .filter((entity: any) => entity.description && entity.description !== dishName)
+        .filter((entity: any) => entity.description && 
+                               entity.description !== dishName && 
+                               entity.score >= 0.5)
         .slice(0, 5);
       
       for (const entity of filteredEntities) {
-        if (entity.description && entity.description.length > 3) {
+        if (entity.description && entity.description.length > 3 && 
+            !entity.description.match(/^(food|recipe|dish|meal)$/i)) {
           alternatives.push(entity.description);
           if (alternatives.length >= 3) break;
         }
       }
     } 
-    // If no web labels, use top label
-    else if (labels.length > 0) {
-      dishName = labels[0].description;
-      confidence = labels[0].score;
+    // If no web labels, check text annotations for dish names
+    else if (textAnnotations.length > 1) {
+      // Look for potential food names in detected text
+      const textLines = textAnnotations[0].description.split('\n');
+      const potentialDishNames = textLines.filter(line => 
+        line.length > 3 && 
+        !line.match(/^(menu|price|restaurant|cafe|ingredients|nutrition|calories)$/i) &&
+        line.length < 40 // Not too long to be a dish name
+      );
       
-      // Add alternatives based on other top labels
-      for (let i = 1; i < Math.min(labels.length, 4); i++) {
-        alternatives.push(labels[i].description);
+      if (potentialDishNames.length > 0) {
+        dishName = potentialDishNames[0];
+        confidence = 0.7;
+        
+        // Add other text lines as alternatives
+        for (let i = 1; i < Math.min(potentialDishNames.length, 4); i++) {
+          alternatives.push(potentialDishNames[i]);
+        }
+      }
+    }
+    // If still no dish name, use top label
+    else if (labels.length > 0) {
+      const foodRelatedLabels = labels.filter(label => 
+        !label.description.match(/^(food|recipe|dish|meal|cuisine|restaurant)$/i) &&
+        label.score >= 0.6
+      );
+      
+      if (foodRelatedLabels.length > 0) {
+        dishName = foodRelatedLabels[0].description;
+        confidence = foodRelatedLabels[0].score;
+        
+        // Add alternatives based on other top labels
+        for (let i = 1; i < Math.min(foodRelatedLabels.length, 4); i++) {
+          alternatives.push(foodRelatedLabels[i].description);
+        }
       }
     }
     
-    // If dishName contains food, recipe, or dish without other information
-    if (dishName.match(/^(food|recipe|dish)$/i)) {
+    // If dishName still contains just food, recipe, or dish without other information
+    if (!dishName || dishName.match(/^(food|recipe|dish|meal)$/i)) {
       // Use the first web entity with good score instead
       for (const entity of webEntities) {
-        if (entity.score >= 0.5 && !entity.description.match(/^(food|recipe|dish)$/i)) {
+        if (entity.score >= 0.5 && !entity.description.match(/^(food|recipe|dish|meal)$/i)) {
           dishName = entity.description;
           confidence = entity.score;
           break;
@@ -157,15 +264,17 @@ serve(async (req) => {
       }
     }
     
-    // If still no good dish name, try combining labels
+    // If still no good dish name, try combining food category with cuisine
     if (!dishName || dishName.length < 3) {
-      const relevantLabels = labels
-        .filter((label: any) => !label.description.match(/^(food|recipe|dish|meal|cuisine)$/i))
-        .slice(0, 2);
-      
-      if (relevantLabels.length > 0) {
-        dishName = relevantLabels.map((label: any) => label.description).join(" ");
-        confidence = relevantLabels[0].score;
+      if (cuisine && foodCategory) {
+        dishName = `${cuisine} ${foodCategory}`;
+        confidence = 0.6;
+      } else if (foodCategory) {
+        dishName = foodCategory;
+        confidence = 0.5;
+      } else if (cuisine) {
+        dishName = `${cuisine} Dish`;
+        confidence = 0.5;
       }
     }
     
@@ -196,9 +305,10 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         dishName,
-        cuisine,
+        cuisine: cuisine || "International",
         confidence,
         alternatives,
+        foodCategory: foodCategory || undefined,
         visionDetails: {
           topLabels: labels.slice(0, 5).map((l: any) => l.description),
           topWebEntities: webEntities.slice(0, 5).map((e: any) => e.description)

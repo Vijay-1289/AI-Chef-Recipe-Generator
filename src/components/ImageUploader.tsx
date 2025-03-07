@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from "react";
-import { Upload, ImageIcon, RefreshCw } from "lucide-react";
+import { Upload, ImageIcon, RefreshCw, Coffee, ChefHat, UtensilsCrossed } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -78,20 +78,29 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isProcessi
       
       <div 
         className={`image-upload-area flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-xl
-          ${dragActive ? 'border-primary bg-primary/5' : 'border-border'}
-          hover:border-primary/50 hover:bg-secondary/50 transition-all duration-300`}
+          ${dragActive ? 'border-primary bg-primary/10' : 'border-border'}
+          hover:border-primary/70 hover:bg-secondary/50 transition-all duration-300
+          bg-gradient-to-br from-background to-secondary/30`}
         onDragEnter={handleDrag}
         onDragOver={handleDrag}
         onDragLeave={handleDrag}
         onDrop={handleDrop}
       >
-        <div className="flex flex-col items-center gap-4 text-center">
-          <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center animate-float">
-            <ImageIcon className="w-8 h-8 text-primary/80" />
+        <div className="flex flex-col items-center gap-6 text-center">
+          <div className="relative">
+            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center animate-float">
+              <ChefHat className="w-10 h-10 text-primary" />
+            </div>
+            <div className="absolute -top-3 -right-3 w-10 h-10 rounded-full bg-secondary flex items-center justify-center animate-bounce">
+              <UtensilsCrossed className="w-5 h-5 text-primary/80" />
+            </div>
+            <div className="absolute -bottom-2 -left-3 w-8 h-8 rounded-full bg-secondary flex items-center justify-center animate-pulse">
+              <Coffee className="w-4 h-4 text-primary/80" />
+            </div>
           </div>
           
           <div className="space-y-2">
-            <h3 className="text-xl font-serif font-semibold tracking-tight">
+            <h3 className="text-2xl font-serif font-semibold tracking-tight">
               Upload a Food Image
             </h3>
             <p className="text-muted-foreground max-w-xs">
@@ -99,22 +108,29 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isProcessi
             </p>
           </div>
           
-          <Button 
-            onClick={handleButtonClick} 
-            className="mt-4 relative overflow-hidden group"
-            disabled={isProcessing}
-          >
-            <span className="relative z-10 flex items-center gap-2">
-              <Upload className="w-4 h-4" />
-              Select Image
-            </span>
-            <span className="absolute inset-0 bg-primary/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></span>
-          </Button>
+          <div className="space-y-3">
+            <Button 
+              onClick={handleButtonClick} 
+              className="relative overflow-hidden group bg-primary/90 hover:bg-primary"
+              size="lg"
+              disabled={isProcessing}
+            >
+              <span className="relative z-10 flex items-center gap-2">
+                <Upload className="w-4 h-4" />
+                Select Image
+              </span>
+              <span className="absolute inset-0 bg-primary/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></span>
+            </Button>
+            
+            <p className="text-xs text-muted-foreground">
+              or drag and drop an image here
+            </p>
+          </div>
           
           {isProcessing && (
-            <div className="flex items-center gap-2 mt-2 text-muted-foreground animate-pulse">
+            <div className="flex items-center gap-2 mt-2 text-primary/80 animate-pulse">
               <RefreshCw className="w-4 h-4 animate-spin" />
-              Processing image...
+              Processing your delicious image...
             </div>
           )}
         </div>
