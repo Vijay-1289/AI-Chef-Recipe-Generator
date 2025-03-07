@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -79,6 +80,45 @@ const Index = () => {
       console.error("Error processing image:", error);
       toast.error("Failed to process image", {
         description: "There was a problem analyzing your image. Please try again."
+      });
+      setProcessing(false);
+    }
+  };
+
+  const handleManualEntry = async (dishName: string) => {
+    setProcessing(true);
+    setProcessingStage('generating');
+    setProgress(0);
+    setRecipe(null);
+    setVideoUrl(null);
+    setUploadedImage(null);
+
+    try {
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return 90;
+          }
+          return prev + 5;
+        });
+      }, 300);
+
+      // Default cuisine to "Any" when manually entering dish name
+      const generatedRecipe = await generateRecipe(dishName, "Any");
+      clearInterval(progressInterval);
+      setProgress(100);
+
+      if (generatedRecipe) {
+        setRecipe(generatedRecipe);
+        handleGenerateVideo(generatedRecipe);
+      } else {
+        throw new Error("Failed to generate recipe");
+      }
+    } catch (error) {
+      console.error("Error generating recipe:", error);
+      toast.error("Failed to generate recipe", {
+        description: "There was a problem creating a recipe for this dish. Please try again."
       });
       setProcessing(false);
     }
@@ -211,7 +251,8 @@ const Index = () => {
             
             <TabsContent value="image" className="mt-0">
               <ImageUploader 
-                onImageUpload={handleImageUpload} 
+                onImageUpload={handleImageUpload}
+                onManualEntry={handleManualEntry}
                 isProcessing={processing}
               />
             </TabsContent>

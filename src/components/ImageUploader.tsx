@@ -1,16 +1,20 @@
 
 import React, { useState, useRef } from "react";
-import { Upload, ImageIcon, RefreshCw, Coffee, ChefHat, UtensilsCrossed } from "lucide-react";
+import { Upload, ImageIcon, RefreshCw, Coffee, ChefHat, UtensilsCrossed, Edit3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 interface ImageUploaderProps {
   onImageUpload: (file: File, previewUrl: string) => void;
+  onManualEntry: (dishName: string) => void;
   isProcessing: boolean;
 }
 
-const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isProcessing }) => {
+const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, onManualEntry, isProcessing }) => {
   const [dragActive, setDragActive] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
+  const [dishName, setDishName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrag = (e: React.DragEvent) => {
@@ -63,6 +67,19 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isProcessi
     onImageUpload(file, previewUrl);
   };
 
+  const toggleManualMode = () => {
+    setManualMode(!manualMode);
+  };
+
+  const handleManualSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (dishName.trim()) {
+      onManualEntry(dishName.trim());
+    } else {
+      toast.error("Please enter a dish name");
+    }
+  };
+
   return (
     <div 
       className={`w-full max-w-2xl mx-auto transition-all duration-300 ease-in-out ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}
@@ -101,31 +118,66 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, isProcessi
           
           <div className="space-y-2">
             <h3 className="text-2xl font-serif font-semibold tracking-tight">
-              Upload a Food Image
+              {manualMode ? "Enter Dish Name" : "Upload a Food Image"}
             </h3>
             <p className="text-muted-foreground max-w-xs">
-              Drop an image of a dish you'd like to cook, and our AI will generate a recipe for you
+              {manualMode 
+                ? "Type a dish name, and our AI will generate a recipe for you" 
+                : "Drop an image of a dish you'd like to cook, and our AI will generate a recipe for you"}
             </p>
           </div>
           
-          <div className="space-y-3">
-            <Button 
-              onClick={handleButtonClick} 
-              className="relative overflow-hidden group bg-primary/90 hover:bg-primary"
-              size="lg"
-              disabled={isProcessing}
-            >
-              <span className="relative z-10 flex items-center gap-2">
-                <Upload className="w-4 h-4" />
-                Select Image
-              </span>
-              <span className="absolute inset-0 bg-primary/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></span>
-            </Button>
-            
-            <p className="text-xs text-muted-foreground">
-              or drag and drop an image here
-            </p>
-          </div>
+          {manualMode ? (
+            <form onSubmit={handleManualSubmit} className="w-full max-w-xs space-y-4">
+              <Input
+                value={dishName}
+                onChange={(e) => setDishName(e.target.value)}
+                placeholder="Enter dish name (e.g., Spaghetti Carbonara)"
+                className="w-full"
+              />
+              <Button 
+                type="submit" 
+                className="w-full relative overflow-hidden group bg-primary/90 hover:bg-primary"
+                size="lg"
+                disabled={isProcessing || !dishName.trim()}
+              >
+                <span className="relative z-10 flex items-center gap-2">
+                  <ChefHat className="w-4 h-4" />
+                  Generate Recipe
+                </span>
+                <span className="absolute inset-0 bg-primary/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></span>
+              </Button>
+            </form>
+          ) : (
+            <div className="space-y-3">
+              <Button 
+                onClick={handleButtonClick} 
+                className="relative overflow-hidden group bg-primary/90 hover:bg-primary"
+                size="lg"
+                disabled={isProcessing}
+              >
+                <span className="relative z-10 flex items-center gap-2">
+                  <Upload className="w-4 h-4" />
+                  Select Image
+                </span>
+                <span className="absolute inset-0 bg-primary/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></span>
+              </Button>
+              
+              <p className="text-xs text-muted-foreground">
+                or drag and drop an image here
+              </p>
+            </div>
+          )}
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleManualMode}
+            className="mt-4"
+          >
+            <Edit3 className="w-4 h-4 mr-2" />
+            {manualMode ? "Switch to Image Upload" : "Enter Dish Name Manually"}
+          </Button>
           
           {isProcessing && (
             <div className="flex items-center gap-2 mt-2 text-primary/80 animate-pulse">
