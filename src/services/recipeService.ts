@@ -8,6 +8,8 @@ export const analyzeImage = async (file: File): Promise<{
   cuisine: string;
   confidence: number;
   alternatives: string[];
+  databaseMatch?: boolean;
+  matchScore?: number;
   visionDetails?: {
     topLabels: string[];
     topWebEntities: string[];
@@ -51,11 +53,24 @@ export const analyzeImage = async (file: File): Promise<{
       throw new Error(error?.message || "Failed to analyze image");
     }
 
+    // If we have a database match, show a toast message
+    if (data.databaseMatch) {
+      toast.success("Dish successfully identified!", {
+        description: `Found "${data.dishName}" in our food database.`
+      });
+    } else {
+      toast.info("Dish recognized", {
+        description: `Recognized as "${data.dishName}" (${Math.round(data.confidence * 100)}% confidence).`
+      });
+    }
+
     return {
       dishName: data.dishName,
       cuisine: data.cuisine || "International",
       confidence: data.confidence,
       alternatives: data.alternatives,
+      databaseMatch: data.databaseMatch,
+      matchScore: data.matchScore,
       visionDetails: data.visionDetails
     };
   } catch (error) {

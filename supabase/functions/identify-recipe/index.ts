@@ -1,6 +1,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,6 +9,11 @@ const corsHeaders = {
 };
 
 const GOOGLE_CLOUD_VISION_API_KEY = Deno.env.get('GOOGLE_CLOUD_VISION_API_KEY');
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || '';
+
+// Create Supabase client
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -51,9 +57,9 @@ serve(async (req) => {
         requests: [
           {
             features: [
-              { type: 'LABEL_DETECTION', maxResults: 15 }, // Increased from 10 to 15
-              { type: 'WEB_DETECTION', maxResults: 15 }, // Increased from 10 to 15
-              { type: 'TEXT_DETECTION' } // Added text detection to identify food labels or menu items
+              { type: 'LABEL_DETECTION', maxResults: 15 },
+              { type: 'WEB_DETECTION', maxResults: 15 },
+              { type: 'TEXT_DETECTION' }
             ],
             image: {
               content: base64Image
@@ -104,184 +110,172 @@ serve(async (req) => {
              description.includes('dinner');
     });
     
-    // Expanded list of cuisine keywords
-    const cuisineKeywords = [
-      // Western cuisines
-      'Italian', 'French', 'Spanish', 'Mediterranean', 'Greek', 'American', 'British', 'German', 
-      'Belgian', 'Russian', 'Portuguese', 'Scandinavian', 'Nordic', 'Irish', 'Scottish', 'Welsh',
-      'Austrian', 'Swiss', 'Dutch', 'Polish', 'Hungarian', 'Czech', 'Balkan',
-      
-      // Asian cuisines
-      'Chinese', 'Japanese', 'Thai', 'Korean', 'Vietnamese', 'Indian', 'Pakistani', 'Nepalese', 
-      'Indonesian', 'Malaysian', 'Singaporean', 'Filipino', 'Cambodian', 'Burmese', 'Laotian', 
-      'Mongolian', 'Tibetan', 'Sri Lankan', 'Bangladeshi', 'Central Asian', 'Uyghur',
-      
-      // Middle Eastern and African cuisines
-      'Turkish', 'Lebanese', 'Syrian', 'Persian', 'Iraqi', 'Israeli', 'Moroccan', 'Egyptian', 
-      'Ethiopian', 'Tunisian', 'Algerian', 'Libyan', 'West African', 'East African', 
-      'South African', 'Nigerian', 'Ghanaian', 'Kenyan', 'Somali', 'Sudanese',
-      
-      // Latin American cuisines
-      'Mexican', 'Brazilian', 'Peruvian', 'Argentinian', 'Colombian', 'Chilean', 'Venezuelan', 
-      'Cuban', 'Puerto Rican', 'Dominican', 'Jamaican', 'Caribbean', 'Haitian', 'Trinidadian', 
-      'Ecuadorian', 'Uruguayan', 'Paraguayan', 'Bolivian', 'Central American', 'Guatemalan',
-      
-      // Regional American cuisines
-      'Cajun', 'Creole', 'Southern', 'Tex-Mex', 'New England', 'Midwestern', 'Hawaiian', 
-      'Californian', 'Southwestern', 'Pacific Northwest', 'Alaskan', 'Soul Food', 'Barbecue',
-      
-      // Cooking styles and dietary patterns
-      'Vegan', 'Vegetarian', 'Pescatarian', 'Kosher', 'Halal', 'Gluten-free', 'Paleo', 
-      'Keto', 'Low-carb', 'Plant-based', 'Raw', 'Fusion', 'Slow-cooked', 'Smoked', 
-      'Grilled', 'Baked', 'Fried', 'Roasted', 'Steamed', 'Stir-fried', 'Fermented'
+    // Get all possible dish-related terms from Vision API
+    const allPossibleTerms: string[] = [
+      ...(webLabels || []).map((label: any) => label.label?.toLowerCase() || ''),
+      ...(labels || []).map((label: any) => label.description?.toLowerCase() || ''), 
+      ...(webEntities || []).map((entity: any) => entity.description?.toLowerCase() || '')
     ];
     
-    // Check for cuisine mentions in entities, labels and text
-    let cuisine = '';
+    // Extracted food-specific keywords for database queries
+    const foodKeywords = allPossibleTerms.filter(term => 
+      term.length > 2 && 
+      !term.match(/^(food|meal|dish|recipe|cuisine|restaurant|menu|picture|image|photo)$/)
+    );
     
-    // First check if any text directly mentions a cuisine
-    if (textAnnotations.length > 0) {
-      const detectedText = textAnnotations[0].description.toLowerCase();
-      for (const keyword of cuisineKeywords) {
-        if (detectedText.includes(keyword.toLowerCase())) {
-          cuisine = keyword;
-          break;
-        }
-      }
+    console.log("Food keywords extracted for database search:", foodKeywords);
+    
+    // Query the food_dishes database to find matching dishes
+    const { data: matchingDishes, error: dbError } = await supabase
+      .from('food_dishes')
+      .select('*');
+    
+    if (dbError) {
+      console.error("Database query error:", dbError);
     }
     
-    // If no cuisine found in text, check other sources
-    if (!cuisine) {
-      for (const entity of [...labels, ...webEntities]) {
-        const entityName = (entity.description || '').toLowerCase();
-        for (const keyword of cuisineKeywords) {
-          if (entityName.includes(keyword.toLowerCase())) {
-            cuisine = keyword;
-            break;
-          }
-        }
-        if (cuisine) break;
+    console.log(`Found ${matchingDishes?.length || 0} dishes in database`);
+    
+    // Score each dish based on how well it matches our detected keywords
+    const scoredDishes = matchingDishes ? matchingDishes.map(dish => {
+      let score = 0;
+      const dishName = dish.name.toLowerCase();
+      const dishCuisine = dish.cuisine.toLowerCase();
+      const dishKeywords = dish.keywords ? dish.keywords.map((k: string) => k.toLowerCase()) : [];
+      
+      // Check for exact dish name matches (highest score)
+      if (allPossibleTerms.some(term => term.includes(dishName) || dishName.includes(term))) {
+        score += 20;
       }
-    }
-    
-    // Additional food types recognition (beyond just names of dishes)
-    const foodCategories = [
-      'Pasta', 'Noodles', 'Rice', 'Soup', 'Salad', 'Sandwich', 'Burger', 'Pizza', 'Stew', 
-      'Curry', 'Stir-fry', 'Roast', 'Grill', 'Barbeque', 'BBQ', 'Seafood', 'Fish', 'Sushi', 
-      'Dumpling', 'Bread', 'Pastry', 'Cake', 'Pie', 'Dessert', 'Ice cream', 'Gelato', 
-      'Breakfast', 'Brunch', 'Lunch', 'Dinner', 'Appetizer', 'Entree', 'Main course', 
-      'Side dish', 'Snack', 'Beverage', 'Drink', 'Cocktail', 'Smoothie', 'Juice'
-    ];
-    
-    let foodCategory = '';
-    for (const entity of [...labels, ...webEntities]) {
-      const entityName = (entity.description || '').toLowerCase();
-      for (const category of foodCategories) {
-        if (entityName.includes(category.toLowerCase())) {
-          foodCategory = category;
-          break;
+      
+      // Check for cuisine matches
+      if (allPossibleTerms.some(term => term.includes(dishCuisine) || dishCuisine.includes(term))) {
+        score += 10;
+      }
+      
+      // Check keywords matches
+      for (const keyword of dishKeywords) {
+        if (foodKeywords.some(term => term.includes(keyword) || keyword.includes(term))) {
+          score += 5;
         }
       }
-      if (foodCategory) break;
-    }
+      
+      return { dish, score };
+    }) : [];
     
-    // Identify dish name with improved logic
+    // Sort dishes by score
+    scoredDishes.sort((a, b) => b.score - a.score);
+    console.log("Top matching dishes:", scoredDishes.slice(0, 3).map(d => `${d.dish.name} (score: ${d.score})`));
+    
+    // Determine dish name, cuisine and alternatives using both Vision API and database
     let dishName = '';
+    let cuisine = '';
     let confidence = 0;
     let alternatives: string[] = [];
     
-    // First check web labels (usually most accurate for named dishes)
-    if (webLabels && webLabels.length > 0) {
-      dishName = webLabels[0].label.replace(/\bfood\b/i, '')
-                              .replace(/\brecipe\b/i, '')
-                              .replace(/\bdish\b/i, '')
-                              .replace(/\bmeal\b/i, '')
-                              .trim();
-      confidence = 0.9;
+    // Use the top database match if it has a good score
+    if (scoredDishes.length > 0 && scoredDishes[0].score >= 10) {
+      const topMatch = scoredDishes[0].dish;
+      dishName = topMatch.name;
+      cuisine = topMatch.cuisine;
+      confidence = Math.min(0.9, scoredDishes[0].score / 30); // Convert score to confidence value
       
-      // Add alternatives based on top web entities
-      const filteredEntities = webEntities
-        .filter((entity: any) => entity.description && 
-                               entity.description !== dishName && 
-                               entity.score >= 0.5)
-        .slice(0, 5);
+      // Use other high-scoring dishes as alternatives
+      alternatives = scoredDishes
+        .slice(1, 4)
+        .filter(d => d.score >= 5)
+        .map(d => d.dish.name);
       
-      for (const entity of filteredEntities) {
-        if (entity.description && entity.description.length > 3 && 
-            !entity.description.match(/^(food|recipe|dish|meal)$/i)) {
-          alternatives.push(entity.description);
-          if (alternatives.length >= 3) break;
-        }
-      }
+      console.log(`Using database match: ${dishName} (${cuisine}) with confidence ${confidence}`);
     } 
-    // If no web labels, check text annotations for dish names
-    else if (textAnnotations.length > 1) {
-      // Look for potential food names in detected text
-      const textLines = textAnnotations[0].description.split('\n');
-      const potentialDishNames = textLines.filter(line => 
-        line.length > 3 && 
-        !line.match(/^(menu|price|restaurant|cafe|ingredients|nutrition|calories)$/i) &&
-        line.length < 40 // Not too long to be a dish name
-      );
-      
-      if (potentialDishNames.length > 0) {
-        dishName = potentialDishNames[0];
+    // Fall back to Vision API logic if no good database matches
+    else {
+      // Original Vision API logic for dish identification
+      if (webLabels && webLabels.length > 0) {
+        dishName = webLabels[0].label.replace(/\bfood\b/i, '')
+                                .replace(/\brecipe\b/i, '')
+                                .replace(/\bdish\b/i, '')
+                                .replace(/\bmeal\b/i, '')
+                                .trim();
         confidence = 0.7;
         
-        // Add other text lines as alternatives
-        for (let i = 1; i < Math.min(potentialDishNames.length, 4); i++) {
-          alternatives.push(potentialDishNames[i]);
-        }
-      }
-    }
-    // If still no dish name, use top label
-    else if (labels.length > 0) {
-      const foodRelatedLabels = labels.filter(label => 
-        !label.description.match(/^(food|recipe|dish|meal|cuisine|restaurant)$/i) &&
-        label.score >= 0.6
-      );
-      
-      if (foodRelatedLabels.length > 0) {
-        dishName = foodRelatedLabels[0].description;
-        confidence = foodRelatedLabels[0].score;
+        // Add alternatives based on top web entities
+        const filteredEntities = webEntities
+          .filter((entity: any) => entity.description && 
+                                 entity.description !== dishName && 
+                                 entity.score >= 0.5)
+          .slice(0, 5);
         
-        // Add alternatives based on other top labels
-        for (let i = 1; i < Math.min(foodRelatedLabels.length, 4); i++) {
-          alternatives.push(foodRelatedLabels[i].description);
+        for (const entity of filteredEntities) {
+          if (entity.description && entity.description.length > 3 && 
+              !entity.description.match(/^(food|recipe|dish|meal)$/i)) {
+            alternatives.push(entity.description);
+            if (alternatives.length >= 3) break;
+          }
+        }
+      } 
+      // Check text annotations if no web labels
+      else if (textAnnotations.length > 1) {
+        const textLines = textAnnotations[0].description.split('\n');
+        const potentialDishNames = textLines.filter(line => 
+          line.length > 3 && 
+          !line.match(/^(menu|price|restaurant|cafe|ingredients|nutrition|calories)$/i) &&
+          line.length < 40
+        );
+        
+        if (potentialDishNames.length > 0) {
+          dishName = potentialDishNames[0];
+          confidence = 0.7;
+          
+          for (let i = 1; i < Math.min(potentialDishNames.length, 4); i++) {
+            alternatives.push(potentialDishNames[i]);
+          }
         }
       }
-    }
-    
-    // If dishName still contains just food, recipe, or dish without other information
-    if (!dishName || dishName.match(/^(food|recipe|dish|meal)$/i)) {
-      // Use the first web entity with good score instead
-      for (const entity of webEntities) {
-        if (entity.score >= 0.5 && !entity.description.match(/^(food|recipe|dish|meal)$/i)) {
-          dishName = entity.description;
-          confidence = entity.score;
-          break;
+      // Use top label as a last resort
+      else if (labels.length > 0) {
+        const foodRelatedLabels = labels.filter((label: any) => 
+          !label.description.match(/^(food|recipe|dish|meal|cuisine|restaurant)$/i) &&
+          label.score >= 0.6
+        );
+        
+        if (foodRelatedLabels.length > 0) {
+          dishName = foodRelatedLabels[0].description;
+          confidence = foodRelatedLabels[0].score;
+          
+          for (let i = 1; i < Math.min(foodRelatedLabels.length, 4); i++) {
+            alternatives.push(foodRelatedLabels[i].description);
+          }
         }
       }
-    }
-    
-    // If still no good dish name, try combining food category with cuisine
-    if (!dishName || dishName.length < 3) {
-      if (cuisine && foodCategory) {
-        dishName = `${cuisine} ${foodCategory}`;
-        confidence = 0.6;
-      } else if (foodCategory) {
-        dishName = foodCategory;
-        confidence = 0.5;
-      } else if (cuisine) {
-        dishName = `${cuisine} Dish`;
-        confidence = 0.5;
+      
+      // Try to identify cuisine from labels or database
+      const cuisineMatches = allPossibleTerms.filter(term => {
+        return [
+          'Italian', 'French', 'Chinese', 'Japanese', 'Indian', 'Thai', 
+          'Mexican', 'Greek', 'Spanish', 'Lebanese', 'Turkish', 'Korean', 
+          'Vietnamese', 'American', 'British', 'German', 'Brazilian', 
+          'Peruvian', 'Moroccan', 'Ethiopian', 'Russian', 'Caribbean'
+        ].some(c => term.includes(c.toLowerCase()));
+      });
+      
+      if (cuisineMatches.length > 0) {
+        // Extract the cuisine name from the matched term
+        const cuisineTerm = cuisineMatches[0];
+        const availableCuisines = [
+          'Italian', 'French', 'Chinese', 'Japanese', 'Indian', 'Thai', 
+          'Mexican', 'Greek', 'Spanish', 'Lebanese', 'Turkish', 'Korean', 
+          'Vietnamese', 'American', 'British', 'German', 'Brazilian', 
+          'Peruvian', 'Moroccan', 'Ethiopian', 'Russian', 'Caribbean'
+        ];
+        
+        for (const c of availableCuisines) {
+          if (cuisineTerm.includes(c.toLowerCase())) {
+            cuisine = c;
+            break;
+          }
+        }
       }
-    }
-    
-    // Default if all else fails
-    if (!dishName || dishName.length < 3) {
-      dishName = "Food Dish";
-      confidence = 0.5;
     }
     
     // Clean up dish name
@@ -299,16 +293,22 @@ serve(async (req) => {
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
     
+    // Default cuisine if none was identified
+    if (!cuisine) {
+      cuisine = "International";
+    }
+    
     console.log("Final result:", { dishName, cuisine, confidence, alternatives });
     
     // Return the results
     return new Response(
       JSON.stringify({
         dishName,
-        cuisine: cuisine || "International",
+        cuisine,
         confidence,
         alternatives,
-        foodCategory: foodCategory || undefined,
+        databaseMatch: scoredDishes.length > 0 && scoredDishes[0].score >= 10,
+        matchScore: scoredDishes.length > 0 ? scoredDishes[0].score : 0,
         visionDetails: {
           topLabels: labels.slice(0, 5).map((l: any) => l.description),
           topWebEntities: webEntities.slice(0, 5).map((e: any) => e.description)
