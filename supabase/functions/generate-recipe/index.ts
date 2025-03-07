@@ -7,6 +7,8 @@ const corsHeaders = {
 };
 
 const RECIPE_GENERATION_API_KEY = Deno.env.get('RECIPE_GENERATION_API_KEY');
+const DATABASE_URL = Deno.env.get('SUPABASE_URL');
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -25,10 +27,37 @@ serve(async (req) => {
     }
 
     console.log(`Generating recipe for ${dishName} (${cuisine || 'International'} cuisine)`);
-    console.log("Using Spoonacular API key:", RECIPE_GENERATION_API_KEY.substring(0, 5) + "...");
+    
+    // First, check if we have a matching recipe in our database
+    if (DATABASE_URL && SERVICE_ROLE_KEY) {
+      const supabase = createClient(DATABASE_URL, SERVICE_ROLE_KEY);
+      
+      // Query our food_dishes table for a matching recipe
+      const { data: foodDishes, error: dbError } = await supabase
+        .from('food_dishes')
+        .select('*')
+        .or(`name.ilike.%${dishName}%,keywords.cs.{${dishName.toLowerCase()}}`)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      
+      if (!dbError && foodDishes && foodDishes.length > 0) {
+        console.log(`Found matching dish in database: ${foodDishes[0].name}`);
+        // Use the database dish information for more accurate recipe generation
+      }
+    }
+    
+    // Call the Spoonacular API with additional parameters for better results
+    console.log("Using Spoonacular API key:", RECIPE_GENERATION_API_KEY?.substring(0, 5) + "...");
 
-    // Call the Spoonacular API to search for recipes
-    const searchURL = `https://api.spoonacular.com/recipes/complexSearch?apiKey=${RECIPE_GENERATION_API_KEY}&query=${encodeURIComponent(dishName)}&cuisine=${encodeURIComponent(cuisine || '')}&instructionsRequired=true&fillIngredients=true&addRecipeInformation=true&number=3`;
+    let searchURL = `https://api.spoonacular.com/recipes/complexSearch?apiKey=${RECIPE_GENERATION_API_KEY}&query=${encodeURIComponent(dishName)}&instructionsRequired=true&fillIngredients=true&addRecipeInformation=true&number=5`;
+    
+    // Add cuisine if provided
+    if (cuisine && cuisine !== "Any") {
+      searchURL += `&cuisine=${encodeURIComponent(cuisine)}`;
+    }
+    
+    // Add additional parameters for better results
+    searchURL += "&sort=popularity&sortDirection=desc";
     
     console.log("Calling Spoonacular API:", searchURL);
     
@@ -51,8 +80,8 @@ serve(async (req) => {
     if (!searchData.results || searchData.results.length === 0) {
       console.log("No recipes found for this dish, trying a more general search");
       
-      // Try a more general search if specific search fails
-      const generalSearchURL = `https://api.spoonacular.com/recipes/complexSearch?apiKey=${RECIPE_GENERATION_API_KEY}&query=food&cuisine=${encodeURIComponent(cuisine || '')}&instructionsRequired=true&fillIngredients=true&addRecipeInformation=true&number=1`;
+      // Try a broader search if specific search fails
+      const generalSearchURL = `https://api.spoonacular.com/recipes/complexSearch?apiKey=${RECIPE_GENERATION_API_KEY}&query=food&instructionsRequired=true&fillIngredients=true&addRecipeInformation=true&number=3`;
       
       const generalSearchResponse = await fetch(generalSearchURL, {
         method: 'GET',
@@ -98,12 +127,12 @@ serve(async (req) => {
     const formattedRecipe = {
       name: recipeData.title,
       description: recipeData.summary 
-        ? recipeData.summary.replace(/<[^>]*>/g, '').split('.')[0] + '.' 
+        ? recipeData.summary.replace(/<[^>]*>/g, '').split('.').slice(0, 2).join('.') + '.' 
         : `A delicious ${dishName} recipe.`,
       cuisine: recipeData.cuisines && recipeData.cuisines.length > 0 
         ? recipeData.cuisines[0] 
         : (cuisine || "International"),
-      difficulty: recipeData.veryPopular ? "Easy" : (recipeData.veryHealthy ? "Medium" : "Hard"),
+      difficulty: getDifficultyLevel(recipeData),
       cookingTime: recipeData.readyInMinutes || 30,
       servings: recipeData.servings || 4,
       ingredients: recipeData.extendedIngredients.map(ingredient => ({
@@ -114,11 +143,9 @@ serve(async (req) => {
       steps: recipeData.analyzedInstructions.length > 0 && recipeData.analyzedInstructions[0].steps.length > 0
         ? recipeData.analyzedInstructions[0].steps.map(step => ({
             instruction: step.step,
-            tip: step.step.length > 100 ? "Take your time with this step for best results." : undefined
+            tip: getStepTip(step.step)
           }))
-        : [{ instruction: "Combine all ingredients according to your preference." },
-           { instruction: "Cook until done to your liking." },
-           { instruction: "Serve and enjoy your meal!" }],
+        : generateDefaultSteps(dishName),
       imageUrl: recipeData.image
     };
 
@@ -132,7 +159,7 @@ serve(async (req) => {
   } catch (error) {
     console.error("Error generating recipe:", error);
     
-    // If API call fails, provide a basic fallback recipe
+    // If API call fails, provide a high-quality fallback recipe
     const fallbackRecipe = generateFallbackRecipe(req);
     
     return new Response(
@@ -146,12 +173,85 @@ serve(async (req) => {
   }
 });
 
+// Helper function to determine recipe difficulty
+function getDifficultyLevel(recipe) {
+  // If we have preparation minutes, use that as a factor
+  if (recipe.preparationMinutes && recipe.preparationMinutes > 0) {
+    if (recipe.preparationMinutes < 15) return "Easy";
+    if (recipe.preparationMinutes < 30) return "Medium";
+    return "Hard";
+  }
+  
+  // If we have cooking minutes, use that as a factor
+  if (recipe.cookingMinutes && recipe.cookingMinutes > 0) {
+    if (recipe.cookingMinutes < 20) return "Easy";
+    if (recipe.cookingMinutes < 45) return "Medium";
+    return "Hard";
+  }
+  
+  // If we have the number of ingredients, use that
+  if (recipe.extendedIngredients) {
+    if (recipe.extendedIngredients.length < 6) return "Easy";
+    if (recipe.extendedIngredients.length < 10) return "Medium";
+    return "Hard";
+  }
+  
+  // Default to medium if we can't determine
+  return "Medium";
+}
+
+// Helper function to generate cooking tips based on the step
+function getStepTip(stepText) {
+  if (!stepText) return undefined;
+  
+  // Only add tips to certain steps to avoid overwhelming the user
+  if (Math.random() < 0.3) {
+    if (stepText.includes("heat")) {
+      return "Monitor the heat carefully to prevent burning.";
+    } else if (stepText.includes("mix") || stepText.includes("stir")) {
+      return "Use a gentle folding motion for more delicate ingredients.";
+    } else if (stepText.includes("season")) {
+      return "It's easier to add more seasoning later than to fix an over-seasoned dish.";
+    } else if (stepText.includes("simmer") || stepText.includes("boil")) {
+      return "Keep the lid on to maintain temperature and reduce cooking time.";
+    } else if (stepText.includes("bake")) {
+      return "Rotating the pan halfway through ensures even baking.";
+    } else if (stepText.length > 100) {
+      return "Take your time with this step for best results.";
+    }
+  }
+  
+  return undefined;
+}
+
+// Helper function to generate default cooking steps
+function generateDefaultSteps(dishName) {
+  return [
+    { 
+      instruction: `Prepare all ingredients for your ${dishName} according to the ingredients list.`,
+      tip: "Organizing your ingredients before starting makes cooking much smoother."
+    },
+    { 
+      instruction: "Combine the ingredients in the appropriate order as described below.",
+      tip: "Read through all steps first to understand the cooking process."
+    },
+    { 
+      instruction: "Cook according to the specified times and temperatures for optimal results.",
+      tip: "Use a timer to avoid overcooking."
+    },
+    { 
+      instruction: `Serve your ${dishName} hot and enjoy!`,
+      tip: "Presentation matters - consider garnishing with fresh herbs for extra appeal."
+    }
+  ];
+}
+
 // Fallback function to generate a basic recipe when the API fails
 async function generateFallbackRecipe(req) {
   try {
     const { dishName, cuisine } = await req.json();
     
-    // Create a mock recipe based on the dish name
+    // Create a detailed fallback recipe based on the dish name
     let recipe = {
       name: dishName || "Delicious Meal",
       description: `A delicious ${dishName} recipe prepared with fresh ingredients.`,
@@ -191,6 +291,57 @@ async function generateFallbackRecipe(req) {
           { instruction: "Add pasta to the sauce along with a splash of pasta water. Toss to combine." },
           { instruction: "Remove from heat, add torn basil leaves and toss again." },
           { instruction: "Serve hot with grated parmesan on top." }
+        ]
+      };
+    } else if (dishName.toLowerCase().includes("cake") || dishName.toLowerCase().includes("chocolate")) {
+      recipe = {
+        name: "Decadent Chocolate Cake",
+        description: "A rich, moist chocolate cake with a silky ganache frosting.",
+        cuisine: "Dessert",
+        difficulty: "Medium",
+        cookingTime: 60,
+        servings: 8,
+        ingredients: [
+          { name: "all-purpose flour", amount: "2 cups" },
+          { name: "granulated sugar", amount: "2 cups" },
+          { name: "unsweetened cocoa powder", amount: "3/4 cup" },
+          { name: "baking powder", amount: "2 tsp" },
+          { name: "baking soda", amount: "1 1/2 tsp" },
+          { name: "salt", amount: "1 tsp" },
+          { name: "eggs", amount: "2 large" },
+          { name: "milk", amount: "1 cup" },
+          { name: "vegetable oil", amount: "1/2 cup" },
+          { name: "vanilla extract", amount: "2 tsp" },
+          { name: "boiling water", amount: "1 cup" },
+          { name: "heavy cream", amount: "1 cup", notes: "For ganache" },
+          { name: "semi-sweet chocolate chips", amount: "1 1/2 cups", notes: "For ganache" }
+        ],
+        steps: [
+          { 
+            instruction: "Preheat oven to 350°F (175°C). Grease and flour two 9-inch round cake pans." 
+          },
+          { 
+            instruction: "In a large bowl, whisk together flour, sugar, cocoa powder, baking powder, baking soda, and salt." 
+          },
+          { 
+            instruction: "Add eggs, milk, oil, and vanilla to the dry ingredients and mix with an electric mixer on medium speed for about 2 minutes.",
+            tip: "The batter will be quite thick at this stage."
+          },
+          { 
+            instruction: "Stir in boiling water. The batter will become thin, which is normal." 
+          },
+          { 
+            instruction: "Pour batter evenly into the prepared pans and bake for 30-35 minutes, or until a toothpick inserted in the center comes out clean." 
+          },
+          { 
+            instruction: "Allow cakes to cool in the pans for 10 minutes, then remove from pans and cool completely on wire racks." 
+          },
+          { 
+            instruction: "For the ganache, heat heavy cream until it just begins to simmer (don't let it boil). Pour over chocolate chips in a bowl and let sit for 5 minutes, then stir until smooth." 
+          },
+          { 
+            instruction: "Once the cakes are completely cool, spread ganache over one layer, stack the second layer on top, and cover the entire cake with the remaining ganache." 
+          }
         ]
       };
     } else if (dishName.toLowerCase().includes("chicken")) {

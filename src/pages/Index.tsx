@@ -1,97 +1,26 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { toast } from "sonner";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import ImageUploader from "@/components/ImageUploader";
+import DishNameInput from "@/components/DishNameInput";
 import ProcessingState from "@/components/ProcessingState";
 import RecipeDisplay from "@/components/RecipeDisplay";
-import IngredientSearch from "@/components/IngredientSearch";
-import IngredientRecipeList from "@/components/IngredientRecipeList";
 import { Recipe } from "@/types/recipe";
-import { analyzeImage, generateRecipe, generateVideo, findRecipesByIngredients } from "@/services/recipeService";
+import { generateRecipe, generateVideo } from "@/services/recipeService";
 import { ChefHat, Utensils, Sparkles } from "lucide-react";
 
 const Index = () => {
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  const [originalFile, setOriginalFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
-  const [processingStage, setProcessingStage] = useState<'analyzing' | 'generating' | 'creating-video'>('analyzing');
+  const [processingStage, setProcessingStage] = useState<'analyzing' | 'generating' | 'creating-video'>('generating');
   const [progress, setProgress] = useState(0);
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [searchMode, setSearchMode] = useState<'image' | 'ingredients'>('image');
-  const [ingredientRecipes, setIngredientRecipes] = useState<Recipe[]>([]);
-  const [searchingIngredients, setSearchingIngredients] = useState(false);
 
-  const handleImageUpload = async (file: File, previewUrl: string) => {
-    setUploadedImage(previewUrl);
-    setOriginalFile(file);
-    setProcessing(true);
-    setProcessingStage('analyzing');
-    setProgress(0);
-    setRecipe(null);
-    setVideoUrl(null);
-
-    try {
-      const progressInterval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
-            return 90;
-          }
-          return prev + 10;
-        });
-      }, 300);
-
-      const analysis = await analyzeImage(file);
-      clearInterval(progressInterval);
-      setProgress(100);
-
-      toast.success(`Identified: ${analysis.dishName}`, {
-        description: `Confidence: ${(analysis.confidence * 100).toFixed(0)}% • Cuisine: ${analysis.cuisine}`,
-        duration: 5000
-      });
-
-      setProcessingStage('generating');
-      setProgress(0);
-
-      const recipeProgressInterval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(recipeProgressInterval);
-            return 90;
-          }
-          return prev + 5;
-        });
-      }, 300);
-
-      const generatedRecipe = await generateRecipe(analysis.dishName, analysis.cuisine);
-      clearInterval(recipeProgressInterval);
-      setProgress(100);
-
-      setRecipe(generatedRecipe);
-
-      if (generatedRecipe) {
-        handleGenerateVideo(generatedRecipe);
-      } else {
-        setProcessing(false);
-      }
-    } catch (error) {
-      console.error("Error processing image:", error);
-      toast.error("Failed to process image", {
-        description: "There was a problem analyzing your image. Please try again."
-      });
-      setProcessing(false);
-    }
-  };
-
-  const handleManualEntry = async (dishName: string) => {
+  const handleDishNameSubmit = async (dishName: string) => {
     setProcessing(true);
     setProcessingStage('generating');
     setProgress(0);
     setRecipe(null);
     setVideoUrl(null);
-    setUploadedImage(null);
 
     try {
       const progressInterval = setInterval(() => {
@@ -163,53 +92,6 @@ const Index = () => {
     }
   };
 
-  const handleIngredientSearch = async (ingredients: string[]) => {
-    setSearchingIngredients(true);
-    setIngredientRecipes([]);
-    
-    try {
-      const recipes = await findRecipesByIngredients(ingredients);
-      setIngredientRecipes(recipes);
-      
-      if (recipes.length > 0) {
-        toast.success(`Found ${recipes.length} recipes`, {
-          description: `Recipes using ${ingredients.slice(0, 2).join(', ')}${ingredients.length > 2 ? ', and more' : ''}`,
-        });
-      } else {
-        toast.info("No recipes found", {
-          description: "Try different ingredients or fewer restrictions",
-        });
-      }
-    } catch (error) {
-      console.error("Error searching recipes by ingredients:", error);
-      toast.error("Recipe search failed", {
-        description: "There was a problem finding recipes with your ingredients."
-      });
-    } finally {
-      setSearchingIngredients(false);
-    }
-  };
-
-  const handleSelectRecipe = (selectedRecipe: Recipe) => {
-    setRecipe(selectedRecipe);
-    setVideoUrl(null);
-    
-    handleGenerateVideo(selectedRecipe);
-  };
-
-  const handleTabChange = (value: string) => {
-    if (value === 'image') {
-      setSearchMode('image');
-    } else if (value === 'ingredients') {
-      setSearchMode('ingredients');
-      if (recipe && !processing) {
-        setRecipe(null);
-        setVideoUrl(null);
-        setUploadedImage(null);
-      }
-    }
-  };
-
   return (
     <main className="min-h-screen bg-background bg-gradient-to-b from-background via-background to-secondary/10">
       <header className="w-full py-10 px-6 text-center bg-gradient-to-b from-primary/5 to-background">
@@ -222,7 +104,7 @@ const Index = () => {
             <Utensils className="h-8 w-8 text-primary/80 animate-pulse" />
           </div>
           <p className="text-muted-foreground max-w-2xl mx-auto animate-fade-in text-lg">
-            Your AI Culinary Assistant: Get Recipes from Photos or Ingredients!
+            Your AI Culinary Assistant: Get Perfect Recipes with AI Chef Video Tutorials!
           </p>
           <div className="flex justify-center">
             <span className="inline-flex items-center px-3 py-1 text-xs rounded-full bg-primary/10 text-primary gap-1">
@@ -235,43 +117,10 @@ const Index = () => {
 
       <div className="container px-6 py-8">
         {!recipe && !processing && (
-          <Tabs 
-            defaultValue="image" 
-            onValueChange={handleTabChange}
-            className="w-full max-w-4xl mx-auto"
-          >
-            <TabsList className="grid grid-cols-2 w-full max-w-md mx-auto mb-8 bg-secondary/40 p-1">
-              <TabsTrigger value="image" className="data-[state=active]:bg-primary/90 data-[state=active]:text-white">
-                Photo to Recipe
-              </TabsTrigger>
-              <TabsTrigger value="ingredients" className="data-[state=active]:bg-primary/90 data-[state=active]:text-white">
-                Ingredients to Recipe
-              </TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="image" className="mt-0">
-              <ImageUploader 
-                onImageUpload={handleImageUpload}
-                onManualEntry={handleManualEntry}
-                isProcessing={processing}
-              />
-            </TabsContent>
-            
-            <TabsContent value="ingredients" className="mt-0">
-              <IngredientSearch 
-                onSearch={handleIngredientSearch}
-                isSearching={searchingIngredients}
-              />
-              
-              {!searchingIngredients && ingredientRecipes.length > 0 && !recipe && (
-                <IngredientRecipeList 
-                  recipes={ingredientRecipes}
-                  onSelectRecipe={handleSelectRecipe}
-                  isLoading={searchingIngredients}
-                />
-              )}
-            </TabsContent>
-          </Tabs>
+          <DishNameInput 
+            onDishNameSubmit={handleDishNameSubmit}
+            isProcessing={processing}
+          />
         )}
 
         {processing && (
@@ -284,7 +133,7 @@ const Index = () => {
         {recipe && !processing && (
           <RecipeDisplay 
             recipe={recipe} 
-            imageUrl={uploadedImage || (recipe.imageUrl || '')}
+            imageUrl={recipe.imageUrl || ''}
             onGenerateVideo={() => handleGenerateVideo()}
             videoUrl={videoUrl || undefined}
           />

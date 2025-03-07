@@ -10,3 +10,22 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 // import { supabase } from "@/integrations/supabase/client";
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+// Helper function to check if a Supabase environment variable is available
+export const hasSecret = async (secretName: string): Promise<boolean> => {
+  try {
+    const { data, error } = await supabase.functions.invoke('check-secret', {
+      body: { secretName }
+    });
+    
+    if (error) {
+      console.error(`Error checking for ${secretName}:`, error);
+      return false;
+    }
+    
+    return data?.exists || false;
+  } catch (err) {
+    console.error(`Failed to check for ${secretName}:`, err);
+    return false;
+  }
+};
